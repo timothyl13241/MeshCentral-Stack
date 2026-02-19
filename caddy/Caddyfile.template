@@ -19,7 +19,7 @@
 }
 
 # MeshCentral site configuration
-$MESHCENTRAL_HOSTNAME {
+{env.MESHCENTRAL_HOSTNAME} {
 	# Enable TLS
 	tls {
 		protocols tls1.2 tls1.3
@@ -104,6 +104,6 @@ $MESHCENTRAL_HOSTNAME {
 }
 
 # HTTP to HTTPS redirect (if needed)
-http://$MESHCENTRAL_HOSTNAME {
+http://{env.MESHCENTRAL_HOSTNAME} {
 	redir https://{host}{uri} permanent
 }
