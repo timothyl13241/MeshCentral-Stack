@@ -1,0 +1,64 @@
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+
+# Docker volumes and persistent data
+meshcentral-data/*
+!meshcentral-data/config.json
+meshcentral-files/
+meshcentral-backup/
+meshcentral-web/
+mongodb-data/
+mongodb-config/
+caddy-data/
+caddy-config/
+
+# Note: meshcentral-data/config.json is tracked as an example template
+# If you generate a production config with real secrets, you can:
+# 1. Copy it to config.production.json and add that to .gitignore
+# 2. Or use environment variable substitution as shown in the README
+
+# MongoDB data and logs
+mongo-data/
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# Backup files
+*.bak
+*.backup
+
+# Docker override files (if you create custom overrides)
+docker-compose.override.yml
+
+# SSL/TLS certificates (if manually generated)
+*.pem
+*.key
+*.crt
+*.csr
+*.pfx
+*.p12
+
+# Node modules (if running locally)
+node_modules/
+
+# OS files
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
