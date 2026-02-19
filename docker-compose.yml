@@ -119,7 +119,7 @@ services:
 
   # Caddy Reverse Proxy
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.7.6-builder-alpine
     container_name: meshcentral-caddy
     restart: unless-stopped
     depends_on:
@@ -132,6 +132,7 @@ services:
     environment:
       MESHCENTRAL_HOSTNAME: ${MESHCENTRAL_HOSTNAME}
       ACME_EMAIL: ${ACME_EMAIL}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
