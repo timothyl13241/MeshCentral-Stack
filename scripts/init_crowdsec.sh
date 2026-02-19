@@ -64,14 +64,18 @@ else
             # Create backup
             cp "$CONFIG_FILE" "${CONFIG_FILE}.backup"
             
-            # Update the API key in the crowdsec section
+            # Update the API key in the crowdsec section, preserving other settings
+            # Use *= to merge instead of = to overwrite
             jq --arg url "$CROWDSEC_LAPI_URL" \
                --arg key "$API_KEY" \
-               '.settings.crowdsec = {
-                   "url": $url,
-                   "apiKey": $key,
-                   "fallbackremediation": "bypass"
-               }' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp"
+               '.settings.crowdsec = (
+                   .settings.crowdsec // {} | 
+                   . * {
+                       "url": $url,
+                       "apiKey": $key,
+                       "fallbackremediation": (.fallbackremediation // "bypass")
+                   }
+               )' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp"
             
             if jq empty "${CONFIG_FILE}.tmp" 2>/dev/null; then
                 mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"

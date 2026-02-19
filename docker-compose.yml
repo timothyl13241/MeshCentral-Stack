@@ -104,6 +104,8 @@ services:
       - meshcentral-files:/opt/meshcentral/meshcentral-files
       - meshcentral-backup:/opt/meshcentral/meshcentral-backup
       - meshcentral-web:/opt/meshcentral/meshcentral-web
+      # Template config - copy to volume on first startup
+      - ./meshcentral-data/config.json:/opt/meshcentral/meshcentral-data/config-template.json:ro
     networks:
       - meshcentral-backend
       - meshcentral-frontend

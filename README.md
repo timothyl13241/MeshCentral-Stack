@@ -63,13 +63,14 @@ openssl rand -base64 32
 
 ### 3. Update MeshCentral Configuration
 
-The `meshcentral-data/config.json` file uses environment variable placeholders. For production, you may want to create a resolved version:
+The `meshcentral-data/config.json` file is provided as a template. MeshCentral will create its own config.json in the Docker volume on first startup. The template includes a CrowdSec section with placeholder values that will be automatically updated when you run the CrowdSec init container.
+
+**Note:** If using CrowdSec, the init container will automatically update the config.json with the correct API key, so no manual configuration is needed.
+
+For advanced customization, you can manually edit the template before first startup:
 
 ```bash
-# Option 1: Use envsubst to resolve variables (requires gettext package)
-envsubst < meshcentral-data/config.json > meshcentral-data/config.resolved.json
-
-# Option 2: Manually edit config.json and replace ${VAR} with actual values
+# Manually edit config.json and replace ${VAR} with actual values
 nano meshcentral-data/config.json
 ```
 
@@ -388,8 +389,6 @@ Edit `meshcentral-data/config.json` and add the CrowdSec section under `settings
 docker-compose restart meshcentral
 ```
 
-You should see a bouncer named `meshcentral` in the list.
-
 ### 3. Test CrowdSec Protection
 
 To verify CrowdSec is protecting your instance:
@@ -443,7 +442,7 @@ If you need to regenerate the bouncer key:
 docker exec meshcentral-crowdsec cscli bouncers delete meshcentral
 
 # Run the init container again
-docker-compose run --rm crowdsec-init
+docker-compose --profile crowdsec-init run --rm crowdsec-init
 
 # Restart MeshCentral
 docker-compose restart meshcentral
