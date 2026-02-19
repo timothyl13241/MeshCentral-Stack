@@ -1,0 +1,63 @@
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+
+# Docker volumes and persistent data
+meshcentral-data/
+meshcentral-files/
+meshcentral-backup/
+meshcentral-web/
+mongodb-data/
+mongodb-config/
+caddy-data/
+caddy-config/
+
+# Exclude config.json if it contains secrets (keep the example)
+# Uncomment this if you generate a real config.json:
+# meshcentral-data/config.json
+
+# MongoDB data and logs
+mongo-data/
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# Backup files
+*.bak
+*.backup
+
+# Docker override files (if you create custom overrides)
+docker-compose.override.yml
+
+# SSL/TLS certificates (if manually generated)
+*.pem
+*.key
+*.crt
+*.csr
+*.pfx
+*.p12
+
+# Node modules (if running locally)
+node_modules/
+
+# OS files
+.DS_Store
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini

@@ -1,0 +1,135 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7
+    container_name: meshcentral-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE}
+      MESHCENTRAL_USER: ${MESHCENTRAL_DB_USER}
+      MESHCENTRAL_PASSWORD: ${MESHCENTRAL_DB_PASSWORD}
+    volumes:
+      - mongodb-data:/data/db
+      - mongodb-config:/data/configdb
+      - ./mongo-init/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    networks:
+      - meshcentral-backend
+    command: 
+      - --auth
+      # Enable encryption at rest (requires keyfile configuration in production)
+      # - --enableEncryption
+      # - --encryptionKeyFile=/etc/mongodb-keyfile
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/${MONGO_DATABASE} --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # MeshCentral Server
+  meshcentral:
+    image: ghcr.io/ylianst/meshcentral:latest
+    container_name: meshcentral-app
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      # Hostname configuration
+      HOSTNAME: ${MESHCENTRAL_HOSTNAME}
+      # Reverse proxy settings
+      REVERSE_PROXY: ${REVERSE_PROXY:-caddy}
+      REVERSE_PROXY_TLS_PORT: ${REVERSE_PROXY_TLS_PORT:-443}
+      # MongoDB connection
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_URL: mongodb://${MESHCENTRAL_DB_USER}:${MESHCENTRAL_DB_PASSWORD}@mongodb:27017/${MONGO_DATABASE}
+      # Node settings
+      NODE_ENV: ${NODE_ENV:-production}
+    volumes:
+      - meshcentral-data:/opt/meshcentral/meshcentral-data
+      - meshcentral-files:/opt/meshcentral/meshcentral-files
+      - meshcentral-backup:/opt/meshcentral/meshcentral-backup
+      - meshcentral-web:/opt/meshcentral/meshcentral-web
+      - ./meshcentral-data/config.json:/opt/meshcentral/meshcentral-data/config.json:ro
+    networks:
+      - meshcentral-backend
+      - meshcentral-frontend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4430/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Caddy Reverse Proxy
+  caddy:
+    image: caddy:2-alpine
+    container_name: meshcentral-caddy
+    restart: unless-stopped
+    depends_on:
+      meshcentral:
+        condition: service_healthy
+    ports:
+      - "${CADDY_HTTP_PORT:-80}:80"
+      - "${CADDY_HTTPS_PORT:-443}:443"
+      - "${CADDY_ADMIN_PORT:-2019}:2019"
+    environment:
+      MESHCENTRAL_HOSTNAME: ${MESHCENTRAL_HOSTNAME}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - meshcentral-frontend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Cloudflared Tunnel (Optional - remove if not using Cloudflare Tunnel)
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: meshcentral-cloudflared
+    restart: unless-stopped
+    depends_on:
+      caddy:
+        condition: service_healthy
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - meshcentral-frontend
+    profiles:
+      - cloudflare  # Only start when explicitly enabled
+
+networks:
+  meshcentral-frontend:
+    driver: bridge
+    internal: false
+  meshcentral-backend:
+    driver: bridge
+    internal: true
+
+volumes:
+  mongodb-data:
+    driver: local
+  mongodb-config:
+    driver: local
+  meshcentral-data:
+    driver: local
+  meshcentral-files:
+    driver: local
+  meshcentral-backup:
+    driver: local
+  meshcentral-web:
+    driver: local
+  caddy-data:
+    driver: local
+  caddy-config:
+    driver: local
