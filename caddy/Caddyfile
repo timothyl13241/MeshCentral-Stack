@@ -3,10 +3,7 @@
 	admin 0.0.0.0:2019
 	
 	# Email for ACME (Let's Encrypt)
-	email {env.ACME_EMAIL}
-	
-	# Enable automatic HTTPS
-	auto_https on
+	email {$ACME_EMAIL}
 	
 	# Log configuration
 	log {
@@ -19,11 +16,11 @@
 }
 
 # MeshCentral site configuration
-{env.MESHCENTRAL_HOSTNAME} {
+{$MESHCENTRAL_HOSTNAME} {
 	# Enable TLS
 	tls {
 		protocols tls1.2 tls1.3
-		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
 	}
 	
 	# Add security headers
@@ -104,6 +101,6 @@
 }
 
 # HTTP to HTTPS redirect (if needed)
-http://{env.MESHCENTRAL_HOSTNAME} {
+http://{$MESHCENTRAL_HOSTNAME} {
 	redir https://{host}{uri} permanent
 }
