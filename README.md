@@ -1,31 +1,34 @@
 # MeshCentral Docker Stack
 
-A secure, production-ready Docker Compose stack for [MeshCentral](https://meshcentral.com/), featuring:
+A secure, production-ready Docker Compose stack for [MeshCentral](https://meshcentral.com/), featuring automatic HTTPS with Caddy Cloudflare DNS challenge, secure environment variable management, and optional CrowdSec integration.
 
-- **MeshCentral**: Remote device management server
-- **MongoDB**: Persistent database with authentication and encryption-at-rest capability
-- **Caddy**: Modern reverse proxy with automatic HTTPS via Let's Encrypt
-- **CrowdSec**: Optional automated intrusion prevention system with threat intelligence (Optional)
-- **Cloudflared**: Optional Cloudflare Tunnel integration for enhanced security
+### Service Roles
+
+- **MeshCentral**: Remote device management server for monitoring and controlling devices remotely
+- **MongoDB**: Persistent database with required authentication and optional encryption-at-rest capability
+- **Caddy**: Modern reverse proxy with automatic HTTPS via Let's Encrypt using Cloudflare DNS challenge
+- **CrowdSec**: Optional automated intrusion prevention system with community-driven threat intelligence
+- **Cloudflared**: Optional Cloudflare Tunnel integration for enhanced security and zero-trust access
 
 ## 🔒 Security Features
 
 - **Network Isolation**: Separate frontend and internal backend networks
 - **MongoDB Authentication**: Required database authentication with dedicated user accounts
 - **Encrypted Storage Ready**: MongoDB configured for encryption-at-rest capability
-- **TLS Termination**: Automatic HTTPS certificates via Let's Encrypt
+- **TLS Termination**: Automatic HTTPS certificates via Let's Encrypt with Cloudflare DNS challenge
 - **Security Headers**: HSTS, CSP, X-Frame-Options, and more
 - **Real IP Preservation**: Proper forwarding of CF-Connecting-IP for accurate logging and rate limiting
 - **Password Policies**: Enforced strong password requirements
 - **Rate Limiting**: Built-in login rate limiting and invalid login tracking
-- **Secrets Management**: Environment-based configuration with no hardcoded credentials
+- **Secrets Management**: Secure environment-based configuration with no hardcoded credentials
 - **CrowdSec Integration**: Automated threat intelligence and IP reputation-based blocking (Optional)
 
 ## 📋 Prerequisites
 
 - Docker Engine 20.10 or later
 - Docker Compose 2.x or later
-- A domain name pointing to your server (for Let's Encrypt)
+- A domain name pointing to your server (or using Cloudflare for DNS)
+- Cloudflare API Token with DNS edit permissions (for automatic HTTPS)
 - (Optional) Cloudflare account for Tunnel integration
 
 ## 🚀 Quick Start
@@ -51,6 +54,7 @@ nano .env
 
 - `MESHCENTRAL_HOSTNAME`: Your domain name (e.g., mesh.example.com)
 - `ACME_EMAIL`: Email for Let's Encrypt notifications
+- `CLOUDFLARE_API_TOKEN`: Cloudflare API token with DNS edit permissions (for automatic HTTPS)
 - `MONGO_ROOT_PASSWORD`: Strong password for MongoDB root user
 - `MESHCENTRAL_DB_PASSWORD`: Strong password for MeshCentral database user
 
@@ -112,6 +116,94 @@ https://your-domain.com
 
 Create your first administrator account through the web interface.
 
+## 🌐 Caddy Cloudflare DNS Challenge Setup
+
+This stack uses Caddy with the Cloudflare DNS challenge for automatic HTTPS certificate issuance. This method is particularly useful when:
+- Your server is behind a firewall or NAT
+- You want to issue wildcard certificates
+- HTTP-01 challenge isn't feasible for your setup
+
+### Prerequisites
+
+1. A Cloudflare account with your domain added
+2. A Cloudflare API Token with DNS edit permissions
+
+### Creating a Cloudflare API Token
+
+1. Log in to the [Cloudflare Dashboard](https://dash.cloudflare.com/)
+2. Navigate to **My Profile** → **API Tokens**
+3. Click **Create Token**
+4. Use the **Edit zone DNS** template or create a custom token with these permissions:
+   - **Zone** → **DNS** → **Edit**
+   - **Zone** → **Zone** → **Read**
+5. Set the **Zone Resources** to include your domain
+6. Click **Continue to summary** → **Create Token**
+7. Copy the generated token immediately (it won't be shown again)
+
+### Configuring the API Token
+
+Add the token to your `.env` file:
+
+```bash
+CLOUDFLARE_API_TOKEN=your_cloudflare_dns_api_token_here
+```
+
+### How It Works
+
+When Caddy requests a certificate from Let's Encrypt:
+
+1. Let's Encrypt issues a DNS challenge
+2. Caddy uses your `CLOUDFLARE_API_TOKEN` to create a TXT record in your Cloudflare DNS
+3. Let's Encrypt verifies the TXT record
+4. Certificate is issued and automatically installed
+5. Caddy handles automatic renewal (typically every 60 days)
+
+The Cloudflare DNS challenge is configured in the Caddyfile:
+
+```
+{$MESHCENTRAL_HOSTNAME} {
+  tls {
+    protocols tls1.2 tls1.3
+    dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+  }
+  # ... rest of configuration
+}
+```
+
+### Verification
+
+After starting the stack, verify certificate issuance:
+
+```bash
+# Check Caddy logs for certificate issuance
+docker-compose logs caddy | grep -i "certificate"
+
+# Verify HTTPS is working
+curl -I https://your-domain.com
+
+# Check certificate details
+openssl s_client -connect your-domain.com:443 -servername your-domain.com < /dev/null | openssl x509 -noout -text
+```
+
+### Troubleshooting
+
+If certificate issuance fails:
+
+```bash
+# Check for API token errors
+docker-compose logs caddy | grep -i "cloudflare"
+
+# Verify API token has correct permissions
+# - Token must have Zone:DNS:Edit and Zone:Zone:Read permissions
+# - Token must be scoped to the correct zone
+
+# Test DNS propagation
+dig TXT _acme-challenge.your-domain.com
+
+# Force certificate renewal
+docker-compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+```
+
 ## 🔧 Configuration Details
 
 ### Docker Compose Services
@@ -141,11 +233,13 @@ Create your first administrator account through the web interface.
   - 443 (HTTPS)
   - 2019 (Admin API, internal)
 - **Features**:
-  - Automatic HTTPS with Let's Encrypt
-  - WebSocket support
-  - CF-Connecting-IP forwarding for CrowdSec integration
-  - Security headers
-  - Response compression
+  - Automatic HTTPS with Let's Encrypt using Cloudflare DNS challenge
+  - Supports wildcard certificates and servers behind NAT/firewalls
+  - WebSocket support for MeshCentral real-time connections
+  - CF-Connecting-IP forwarding for CrowdSec and accurate client IP logging
+  - Modern security headers (HSTS, CSP, X-Frame-Options)
+  - Response compression (gzip, zstd)
+  - JSON-formatted access logs with rotation
 
 #### Cloudflared (Optional)
 - **Image**: `cloudflare/cloudflared:latest`
@@ -181,6 +275,15 @@ Internet
 ```
 
 ### Environment Variables
+
+This stack uses secure environment-based configuration to avoid hardcoded credentials. All sensitive values are stored in the `.env` file, which should never be committed to version control.
+
+**Security Best Practices:**
+- Always use strong, randomly generated passwords
+- Keep the `.env` file secure with `chmod 600 .env`
+- Never commit `.env` to Git (it's in `.gitignore`)
+- Use different passwords for each service
+- Regularly rotate credentials
 
 See `.env.example` for all available configuration options.
 
