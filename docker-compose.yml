@@ -55,6 +55,27 @@ services:
     profiles:
       - crowdsec  # Only start when explicitly enabled
 
+  # CrowdSec Init Helper (Optional - only needed for automated setup)
+  crowdsec-init:
+    image: docker:cli
+    container_name: meshcentral-crowdsec-init
+    depends_on:
+      crowdsec:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./scripts/init_crowdsec.sh:/init_crowdsec.sh:ro
+      - meshcentral-data:/meshcentral-data
+    environment:
+      CROWDSEC_CONTAINER: ${CROWDSEC_CONTAINER:-meshcentral-crowdsec}
+      CROWDSEC_BOUNCER_NAME: ${CROWDSEC_BOUNCER_NAME:-meshcentral}
+      CROWDSEC_LAPI_URL: ${CROWDSEC_LAPI_URL:-http://crowdsec:8080}
+    networks:
+      - meshcentral-backend
+    command: sh /init_crowdsec.sh
+    profiles:
+      - crowdsec-init  # Only run when explicitly enabled
+
   # MeshCentral Server
   meshcentral:
     image: ghcr.io/ylianst/meshcentral:latest
@@ -78,41 +99,20 @@ services:
       MONGO_URL: mongodb://${MESHCENTRAL_DB_USER}:${MESHCENTRAL_DB_PASSWORD}@mongodb:27017/${MONGO_DATABASE}
       # Node settings
       NODE_ENV: ${NODE_ENV:-production}
-      # CrowdSec integration settings (used by automation script)
-      CROWDSEC_CONTAINER: ${CROWDSEC_CONTAINER:-meshcentral-crowdsec}
-      CROWDSEC_LAPI_URL: ${CROWDSEC_LAPI_URL:-http://crowdsec:8080}
-      CROWDSEC_BOUNCER_NAME: ${CROWDSEC_BOUNCER_NAME:-meshcentral}
-      MESHCENTRAL_CONFIG_FILE: ${MESHCENTRAL_CONFIG_FILE:-/opt/meshcentral/meshcentral-data/config.json}
-      CROWDSEC_MAX_RETRIES: ${CROWDSEC_MAX_RETRIES:-30}
-      CROWDSEC_RETRY_DELAY: ${CROWDSEC_RETRY_DELAY:-2}
     volumes:
       - meshcentral-data:/opt/meshcentral/meshcentral-data
       - meshcentral-files:/opt/meshcentral/meshcentral-files
       - meshcentral-backup:/opt/meshcentral/meshcentral-backup
       - meshcentral-web:/opt/meshcentral/meshcentral-web
-      - ./meshcentral-data/config.json:/opt/meshcentral/meshcentral-data/config.json
-      # Mount automation script
-      - ./scripts/generate_meshcentral_crowdsec_key.sh:/usr/local/bin/entrypoint-crowdsec.sh:ro
-      # Mount Docker socket for CrowdSec integration (read-only)
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - meshcentral-backend
       - meshcentral-frontend
-    # Override entrypoint to run CrowdSec setup before MeshCentral
-    entrypoint: ["/bin/sh", "-c"]
-    command: 
-      - |
-        if [ -f /usr/local/bin/entrypoint-crowdsec.sh ]; then
-          /usr/local/bin/entrypoint-crowdsec.sh
-        else
-          exec node node_modules/meshcentral
-        fi
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4430/"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 90s  # Increased to allow CrowdSec setup time
+      start_period: 60s
 
   # Caddy Reverse Proxy
   caddy:
