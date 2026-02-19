@@ -122,7 +122,6 @@ services:
     build:
       context: ./caddy
       dockerfile: Dockerfile
-    image: meshcentral-caddy-cloudflare:2.7.6
     container_name: meshcentral-caddy
     restart: unless-stopped
     depends_on:
