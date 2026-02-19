@@ -9,7 +9,7 @@
     "Port": 4430,
     "AliasPort": 443,
     "RedirPort": 0,
-    "TlsOffload": "127.0.0.1",
+    "TlsOffload": "172.19.0.0/16",
     "SelfUpdate": false,
     "AllowFraming": false,
     "WebRTC": false,
