@@ -134,7 +134,7 @@ services:
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
       MESHCENTRAL_HOSTNAME: ${MESHCENTRAL_HOSTNAME}
     volumes:
-      # Rendered Caddyfile - must be generated using render-caddyfile.sh before starting
+      # Caddyfile with environment variable substitution
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config

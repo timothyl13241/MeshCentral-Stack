@@ -69,14 +69,11 @@ openssl rand -base64 32
 
 ### 3. Render Configuration Files
 
-Both the MeshCentral configuration and Caddyfile use a template-based approach with environment variable substitution. You need to render both configuration files before starting the stack.
+The MeshCentral configuration uses a template-based approach with environment variable substitution. You need to render the configuration file before starting the stack.
 
 ```bash
 # Render the config.json from template
 ./render-config.sh
-
-# Render the Caddyfile from template
-./render-caddyfile.sh
 ```
 
 **MeshCentral Configuration (render-config.sh):**
@@ -85,34 +82,34 @@ Both the MeshCentral configuration and Caddyfile use a template-based approach w
 - Generates `meshcentral-data/config.json` with actual values
 - Validates the generated JSON (if `jq` is installed)
 
-**Caddyfile Configuration (render-caddyfile.sh):**
-- Loads variables from your `.env` file
-- Uses `envsubst` to substitute `${MESHCENTRAL_HOSTNAME}` in `caddy/Caddyfile.template`
-- Generates `caddy/Caddyfile` with the actual hostname for site labels
-- Preserves runtime environment variables like `{env.CLOUDFLARE_API_TOKEN}` unchanged
+**Caddyfile Configuration:**
+- Caddy automatically substitutes environment variables at runtime using `{$VARNAME}` syntax
+- The Caddyfile is directly mounted from `caddy/Caddyfile` - no rendering needed
+- Environment variables like `MESHCENTRAL_HOSTNAME`, `ACME_EMAIL`, and `CLOUDFLARE_API_TOKEN` are passed via docker-compose.yml
 
-**Important:** You must run both `./render-config.sh` and `./render-caddyfile.sh` whenever you change environment variables in `.env`.
+**Important:** You must run `./render-config.sh` whenever you change environment variables in `.env`.
 
 ### 4. Update Configuration (Optional)
 
-The template files contain base configurations with environment variable placeholders:
+The MeshCentral template file contains base configuration with environment variable placeholders:
 - `meshcentral-data/config.json.template` - MeshCentral configuration
-- `caddy/Caddyfile.template` - Caddy reverse proxy configuration
+
+The Caddyfile uses Caddy's native environment variable substitution:
+- `caddy/Caddyfile` - Caddy reverse proxy configuration (uses `{$VARNAME}` syntax)
 
 **Note:** If using CrowdSec, the init container will automatically update the rendered config.json with the correct API key, so no manual configuration is needed.
 
-For advanced customization, you can manually edit the templates before rendering:
+For advanced customization, you can manually edit the files before starting:
 
 ```bash
 # Edit the MeshCentral template
 nano meshcentral-data/config.json.template
 
-# Edit the Caddyfile template
-nano caddy/Caddyfile.template
+# Edit the Caddyfile directly
+nano caddy/Caddyfile
 
-# Re-render both configurations
+# Re-render MeshCentral configuration
 ./render-config.sh
-./render-caddyfile.sh
 ```
 
 ### 5. Start the Stack
@@ -195,29 +192,29 @@ When Caddy requests a certificate from Let's Encrypt:
 4. Certificate is issued and automatically installed
 5. Caddy handles automatic renewal (typically every 60 days)
 
-The Cloudflare DNS challenge is configured in the Caddyfile template (`caddy/Caddyfile.template`). The hostname is substituted at deploy time by the `render-caddyfile.sh` script:
+The Cloudflare DNS challenge is configured in the Caddyfile (`caddy/Caddyfile`). The hostname and other variables are automatically substituted at runtime by Caddy using environment variables:
 
 ```
-# In the template:
-$MESHCENTRAL_HOSTNAME {
+# In the Caddyfile:
+{$MESHCENTRAL_HOSTNAME} {
   tls {
     protocols tls1.2 tls1.3
-    dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    dns cloudflare {$CLOUDFLARE_API_TOKEN}
   }
   # ... rest of configuration
 }
 
-# After rendering (e.g., if MESHCENTRAL_HOSTNAME=mesh.example.com):
+# At runtime, Caddy automatically substitutes (e.g., if MESHCENTRAL_HOSTNAME=mesh.example.com):
 mesh.example.com {
   tls {
     protocols tls1.2 tls1.3
-    dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    dns cloudflare <your_actual_token>
   }
   # ... rest of configuration
 }
 ```
 
-Note: `$MESHCENTRAL_HOSTNAME` is substituted at deploy time by envsubst, while `{env.CLOUDFLARE_API_TOKEN}` remains for runtime substitution by Caddy.
+Note: Caddy uses `{$VARNAME}` syntax for environment variable substitution at runtime.
 
 ### Verification
 
@@ -338,7 +335,7 @@ See `.env.example` for all available configuration options.
 
 ### Configuration Rendering Workflow
 
-This stack uses a **host-driven, template-based approach** with environment variable substitution for both MeshCentral and Caddy configurations:
+This stack uses a **host-driven, template-based approach** with environment variable substitution for MeshCentral configuration. Caddy uses native runtime environment variable substitution.
 
 #### MeshCentral Configuration
 
@@ -350,12 +347,10 @@ This stack uses a **host-driven, template-based approach** with environment vari
 
 #### Caddyfile Configuration
 
-1. **Template File**: `caddy/Caddyfile.template` contains the base configuration with `${MESHCENTRAL_HOSTNAME}` for site labels
-2. **Environment Variables**: Hostname is defined in your `.env` file
-3. **Rendering Script**: `render-caddyfile.sh` uses `envsubst` to substitute `${MESHCENTRAL_HOSTNAME}` only
-4. **Rendered Config**: `caddy/Caddyfile` is generated with the actual hostname (excluded from git)
-5. **Docker Mount**: Only the rendered `Caddyfile` is bind-mounted into the container (read-only)
-6. **Runtime Variables**: Other environment variables like `{env.CLOUDFLARE_API_TOKEN}` remain in the rendered file for runtime substitution by Caddy
+1. **Caddyfile**: `caddy/Caddyfile` contains the configuration with `{$VARNAME}` placeholders for Caddy's native substitution
+2. **Environment Variables**: Variables are defined in your `.env` file and passed via docker-compose.yml
+3. **Runtime Substitution**: Caddy automatically substitutes environment variables at runtime
+4. **Docker Mount**: The Caddyfile is directly bind-mounted into the container (read-only)
 
 **Workflow:**
 
@@ -364,25 +359,29 @@ This stack uses a **host-driven, template-based approach** with environment vari
 cp .env.example .env
 nano .env
 
-# 2. Render both configurations
+# 2. Render MeshCentral configuration
 ./render-config.sh
-./render-caddyfile.sh
 
-# 3. Start the stack
+# 3. Start the stack (Caddy will automatically use environment variables)
 docker-compose up -d
 ```
 
 **Important Notes:**
-- Always run both `./render-config.sh` and `./render-caddyfile.sh` before starting the stack for the first time
-- Re-run both scripts whenever you change environment variables in `.env`
-- Template files (`config.json.template`, `Caddyfile.template`) are tracked in git
-- Rendered files (`config.json`, `Caddyfile`) are excluded from git and contain your actual values
+- Always run `./render-config.sh` before starting the stack for the first time
+- Re-run the script whenever you change environment variables in `.env`
+- The template file (`config.json.template`) is tracked in git
+- The rendered file (`config.json`) is excluded from git and contains your actual values
 - The MeshCentral rendering script validates JSON output if `jq` is installed
+- The Caddyfile uses Caddy's native `{$VARNAME}` syntax for runtime substitution - no rendering needed
 
 **Template Variables:**
 
-All environment variables in `.env` can be used in the templates with `${VARNAME}` syntax:
-- `${MESHCENTRAL_HOSTNAME}` - Your domain name
+All environment variables in `.env` can be used:
+- In MeshCentral template with `${VARNAME}` syntax (rendered by envsubst)
+- In Caddyfile with `{$VARNAME}` syntax (substituted by Caddy at runtime)
+
+Examples:
+- `${MESHCENTRAL_HOSTNAME}` or `{$MESHCENTRAL_HOSTNAME}` - Your domain name
 - `${MONGO_DATABASE}` - MongoDB database name
 - `${MESHCENTRAL_DB_USER}` - Database user
 - `${MESHCENTRAL_DB_PASSWORD}` - Database password
@@ -396,12 +395,11 @@ To customize the configurations:
 # Edit the MeshCentral template
 nano meshcentral-data/config.json.template
 
-# Edit the Caddyfile template
-nano caddy/Caddyfile.template
+# Edit the Caddyfile directly
+nano caddy/Caddyfile
 
-# Re-render both configurations
+# Re-render MeshCentral configuration
 ./render-config.sh
-./render-caddyfile.sh
 
 # Restart the stack to apply changes
 docker-compose restart
