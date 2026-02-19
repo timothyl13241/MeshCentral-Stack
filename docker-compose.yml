@@ -111,7 +111,7 @@ services:
       - meshcentral-backend
       - meshcentral-frontend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4430/"]
+      test: ["CMD", "curl", "-f", "-k", "http://localhost:4430/"]
       interval: 30s
       timeout: 10s
       retries: 3
