@@ -38,49 +38,43 @@
 
 	# Requests coming from Cloudflare (CF-Connecting-IP present)
 	@cloudflare header CF-Connecting-IP *
-
+	
 	handle @cloudflare {
 		reverse_proxy meshcentral:4430 {
-			# Preserve real client IP from Cloudflare
+			# Real client IP from Cloudflare
 			header_up X-Real-IP {header.CF-Connecting-IP}
-			header_up X-Forwarded-For {header.CF-Connecting-IP}
-
+			header_up CF-Connecting-IP {header.CF-Connecting-IP}
+	
+			# Let Caddy manage X-Forwarded-For (it appends correctly)
+			# (do NOT override X-Forwarded-For here)
+	
 			# WebSocket support
 			header_up Upgrade {http.request.header.Upgrade}
 			header_up Connection {http.request.header.Connection}
-
-			# Pass through other important headers
+	
+			# Preserve host/proto
 			header_up Host {host}
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Forwarded-Host {host}
-
-			# Health check
-			health_uri /
-			health_interval 30s
-			health_timeout 10s
 		}
 	}
 
 	# Default handler for non-Cloudflare traffic
 	handle {
 		reverse_proxy meshcentral:4430 {
-			# Preserve real client IP
+			# Non-Cloudflare: use remote client IP
 			header_up X-Real-IP {remote_host}
-			header_up X-Forwarded-For {remote_host}
-
+	
+			# Let Caddy manage X-Forwarded-For
+			# (do NOT override X-Forwarded-For here either)
+	
 			# WebSocket support
 			header_up Upgrade {http.request.header.Upgrade}
 			header_up Connection {http.request.header.Connection}
-
-			# Pass through standard headers
+	
 			header_up Host {host}
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Forwarded-Host {host}
-
-			# Health check
-			health_uri /
-			health_interval 30s
-			health_timeout 10s
 		}
 	}
 
