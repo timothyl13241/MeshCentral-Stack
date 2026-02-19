@@ -5,9 +5,6 @@
 	# Email for ACME (Let's Encrypt)
 	email {$ACME_EMAIL}
 	
-	# Enable automatic HTTPS
-	auto_https on
-	
 	# Log configuration
 	log {
 		output file /data/access.log {
