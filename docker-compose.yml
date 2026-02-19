@@ -46,6 +46,7 @@ services:
       - caddy-data:/var/log/caddy:ro
     networks:
       - meshcentral-backend
+      - meshcentral-frontend
     healthcheck:
       test: ["CMD", "cscli", "version"]
       interval: 30s
