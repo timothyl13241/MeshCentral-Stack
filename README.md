@@ -125,26 +125,26 @@ docker compose build caddy
 
 ```bash
 # Start basic stack (MeshCentral, MongoDB, Caddy)
-docker-compose up -d
+docker compose up -d
 
 # Start with CrowdSec protection
-docker-compose --profile crowdsec up -d
+docker compose --profile crowdsec up -d
 
 # Start with Cloudflare Tunnel
-docker-compose --profile cloudflare up -d
+docker compose --profile cloudflare up -d
 
 # Or combine both CrowdSec and Cloudflare
-docker-compose --profile crowdsec --profile cloudflare up -d
+docker compose --profile crowdsec --profile cloudflare up -d
 ```
 
 ### 7. Verify Installation
 
 ```bash
 # Check service status
-docker-compose ps
+docker compose ps
 
 # View logs
-docker-compose logs -f meshcentral
+docker compose logs -f meshcentral
 
 # Test the web interface
 curl -I https://your-domain.com
@@ -231,7 +231,7 @@ After starting the stack, verify certificate issuance:
 
 ```bash
 # Check Caddy logs for certificate issuance
-docker-compose logs caddy | grep -i "certificate"
+docker compose logs caddy | grep -i "certificate"
 
 # Verify HTTPS is working
 curl -I https://your-domain.com
@@ -246,7 +246,7 @@ If certificate issuance fails:
 
 ```bash
 # Check for API token errors
-docker-compose logs caddy | grep -i "cloudflare"
+docker compose logs caddy | grep -i "cloudflare"
 
 # Verify API token has correct permissions
 # - Token must have Zone:DNS:Edit and Zone:Zone:Read permissions
@@ -256,7 +256,7 @@ docker-compose logs caddy | grep -i "cloudflare"
 dig TXT _acme-challenge.your-domain.com
 
 # Force certificate renewal
-docker-compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 ```
 
 ## 🔧 Configuration Details
@@ -372,7 +372,7 @@ nano .env
 ./render-config.sh
 
 # 3. Start the stack (Caddy will automatically use environment variables)
-docker-compose up -d
+docker compose up -d
 ```
 
 **Important Notes:**
@@ -411,7 +411,7 @@ nano caddy/Caddyfile
 ./render-config.sh
 
 # Restart the stack to apply changes
-docker-compose restart
+docker compose restart
 ```
 
 ## 🛡️ Security Best Practices
@@ -472,21 +472,21 @@ sudo ufw enable
 
 ```bash
 # Update Docker images
-docker-compose pull
+docker compose pull
 
 # Restart with new images
-docker-compose up -d
+docker compose up -d
 ```
 
 ### 6. Backup Strategy
 
 ```bash
 # Backup MongoDB
-docker-compose exec mongodb mongodump --authenticationDatabase admin \
+docker compose exec mongodb mongodump --authenticationDatabase admin \
   -u admin -p your_password --out /data/backup
 
 # Backup MeshCentral data
-docker-compose exec meshcentral tar -czf /opt/meshcentral/meshcentral-backup/backup-$(date +%Y%m%d).tar.gz \
+docker compose exec meshcentral tar -czf /opt/meshcentral/meshcentral-backup/backup-$(date +%Y%m%d).tar.gz \
   /opt/meshcentral/meshcentral-data
 ```
 
@@ -494,13 +494,13 @@ docker-compose exec meshcentral tar -czf /opt/meshcentral/meshcentral-backup/bac
 
 ```bash
 # Watch all services
-docker-compose logs -f
+docker compose logs -f
 
 # Watch specific service
-docker-compose logs -f meshcentral
+docker compose logs -f meshcentral
 
 # Watch Caddy access logs
-docker-compose exec caddy tail -f /data/meshcentral-access.log
+docker compose exec caddy tail -f /data/meshcentral-access.log
 ```
 
 ## 🔌 Cloudflare Tunnel Setup
@@ -525,7 +525,7 @@ In the Cloudflare dashboard:
 ### 3. Start with Cloudflare Profile
 
 ```bash
-docker-compose --profile cloudflare up -d
+docker compose --profile cloudflare up -d
 ```
 
 ## 🛡️ CrowdSec Integration Setup
@@ -547,13 +547,13 @@ Start the stack with the CrowdSec profile enabled:
 
 ```bash
 # Start with CrowdSec protection
-docker-compose --profile crowdsec up -d
+docker compose --profile crowdsec up -d
 
 # Run the one-time init container to generate bouncer key and update config
-docker-compose --profile crowdsec-init run --rm crowdsec-init
+docker compose --profile crowdsec-init run --rm crowdsec-init
 
 # Restart MeshCentral to apply configuration
-docker-compose restart meshcentral
+docker compose restart meshcentral
 ```
 
 The init container will:
@@ -568,13 +568,13 @@ Check that CrowdSec is running and the bouncer was registered:
 
 ```bash
 # Check CrowdSec status
-docker-compose ps crowdsec
+docker compose ps crowdsec
 
 # List registered bouncers (should show 'meshcentral')
 docker exec meshcentral-crowdsec cscli bouncers list
 
 # Check MeshCentral logs
-docker-compose logs meshcentral | tail -20
+docker compose logs meshcentral | tail -20
 ```
 
 ### Manual Setup (Alternative)
@@ -584,7 +584,7 @@ If you prefer manual configuration or need to regenerate keys:
 #### 1. Start CrowdSec
 
 ```bash
-docker-compose --profile crowdsec up -d crowdsec
+docker compose --profile crowdsec up -d crowdsec
 ```
 
 #### 2. Generate Bouncer Key
@@ -616,7 +616,7 @@ Edit `meshcentral-data/config.json` and add the CrowdSec section under `settings
 #### 4. Restart MeshCentral
 
 ```bash
-docker-compose restart meshcentral
+docker compose restart meshcentral
 ```
 
 ### Testing CrowdSec Protection
@@ -631,7 +631,7 @@ docker exec meshcentral-crowdsec cscli metrics
 docker exec meshcentral-crowdsec cscli decisions list
 
 # Monitor CrowdSec alerts
-docker-compose logs -f crowdsec
+docker compose logs -f crowdsec
 ```
 
 ### Configuration Options
@@ -672,10 +672,10 @@ If you need to regenerate the bouncer key:
 docker exec meshcentral-crowdsec cscli bouncers delete meshcentral
 
 # Run the init container again
-docker-compose --profile crowdsec-init run --rm crowdsec-init
+docker compose --profile crowdsec-init run --rm crowdsec-init
 
 # Restart MeshCentral
-docker-compose restart meshcentral
+docker compose restart meshcentral
 ```
 
 ### Troubleshooting CrowdSec
@@ -684,7 +684,7 @@ docker-compose restart meshcentral
 
 ```bash
 # Check CrowdSec logs for errors
-docker-compose logs crowdsec
+docker compose logs crowdsec
 
 # Verify CrowdSec health
 docker exec meshcentral-crowdsec cscli version
@@ -694,7 +694,7 @@ docker exec meshcentral-crowdsec cscli version
 
 ```bash
 # Check MeshCentral startup logs
-docker-compose logs meshcentral | grep -A 20 "CrowdSec"
+docker compose logs meshcentral | grep -A 20 "CrowdSec"
 
 # Manually verify Docker socket access
 docker exec meshcentral-app docker ps
@@ -716,7 +716,7 @@ To run the stack without CrowdSec protection:
 
 ```bash
 # Start without the crowdsec profile
-docker-compose up -d
+docker compose up -d
 
 # Remove CrowdSec configuration from config.json if desired
 ```
@@ -727,39 +727,39 @@ docker-compose up -d
 
 ```bash
 # Check logs
-docker-compose logs service-name
+docker compose logs service-name
 
 # Restart specific service
-docker-compose restart service-name
+docker compose restart service-name
 ```
 
 ### MongoDB Connection Issues
 
 ```bash
 # Test MongoDB connection
-docker-compose exec mongodb mongosh -u admin -p your_password --authenticationDatabase admin
+docker compose exec mongodb mongosh -u admin -p your_password --authenticationDatabase admin
 
 # Verify MeshCentral can reach MongoDB
-docker-compose exec meshcentral ping mongodb
+docker compose exec meshcentral ping mongodb
 ```
 
 ### Certificate Issues
 
 ```bash
 # Check Caddy logs
-docker-compose logs caddy
+docker compose logs caddy
 
 # Force certificate renewal
-docker-compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 ```
 
 ### Permission Denied Errors
 
 ```bash
 # Fix volume permissions
-docker-compose down
+docker compose down
 sudo chown -R 1000:1000 meshcentral-data/
-docker-compose up -d
+docker compose up -d
 ```
 
 ## 📊 Monitoring and Maintenance
@@ -770,7 +770,7 @@ All services include health checks:
 
 ```bash
 # Check service health
-docker-compose ps
+docker compose ps
 ```
 
 ### Resource Usage
@@ -797,13 +797,13 @@ docker volume prune
 
 ```bash
 # Pull latest images
-docker-compose pull
+docker compose pull
 
 # Restart services with new images
-docker-compose up -d
+docker compose up -d
 
 # Check for MeshCentral updates
-docker-compose exec meshcentral npm outdated
+docker compose exec meshcentral npm outdated
 ```
 
 ## 🆘 Support and Resources
