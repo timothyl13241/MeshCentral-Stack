@@ -23,7 +23,7 @@
     "crowdsec": {
       "url": "${CROWDSEC_LAPI_URL:-http://crowdsec:8080}",
       "apiKey": "AUTO_GENERATED_BY_STARTUP_SCRIPT",
-      "fallbackremediation": "bypass"
+      "fallbackRemediation": "bypass"
     }
   },
   "domains": {

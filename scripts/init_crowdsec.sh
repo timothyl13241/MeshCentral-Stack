@@ -73,7 +73,7 @@ else
                    . * {
                        "url": $url,
                        "apiKey": $key,
-                       "fallbackremediation": (.fallbackremediation // "bypass")
+                       "fallbackRemediation": (.fallbackRemediation // "bypass")
                    }
                )' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp"
             
@@ -93,7 +93,7 @@ else
 "crowdsec": {
   "url": "$CROWDSEC_LAPI_URL",
   "apiKey": "$API_KEY",
-  "fallbackremediation": "bypass"
+  "fallbackRemediation": "bypass"
 }
 EOFCFG
             echo ""
@@ -108,7 +108,7 @@ EOFCFG
 "crowdsec": {
   "url": "$CROWDSEC_LAPI_URL",
   "apiKey": "$API_KEY",
-  "fallbackremediation": "bypass"
+  "fallbackRemediation": "bypass"
 }
 EOFCFG
         echo ""

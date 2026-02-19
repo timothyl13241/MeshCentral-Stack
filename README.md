@@ -377,7 +377,7 @@ Edit `meshcentral-data/config.json` and add the CrowdSec section under `settings
     "crowdsec": {
       "url": "http://crowdsec:8080",
       "apiKey": "YOUR_API_KEY_HERE",
-      "fallbackremediation": "bypass"
+      "fallbackRemediation": "bypass"
     }
   }
 }
@@ -389,7 +389,7 @@ Edit `meshcentral-data/config.json` and add the CrowdSec section under `settings
 docker-compose restart meshcentral
 ```
 
-### 3. Test CrowdSec Protection
+### Testing CrowdSec Protection
 
 To verify CrowdSec is protecting your instance:
 
