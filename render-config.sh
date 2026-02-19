@@ -45,11 +45,29 @@ if ! command -v envsubst &> /dev/null; then
     exit 1
 fi
 
+# Check if python for percent-encoding is available
+if ! command -v python3 &>/dev/null; then
+    echo -e "${RED}Error: python3 is required for percent-encoding${NC}"
+    echo -e "${YELLOW}Please install python3 package:${NC}"
+    echo "  Ubuntu/Debian: sudo apt-get install python3"
+    echo "  RHEL/CentOS:   sudo yum install python3"
+    exit 1
+fi
+
 echo "Loading environment variables from: $ENV_FILE"
 # Export all variables from .env file
 set -a
 source "$ENV_FILE"
 set +a
+
+# --- Percent-encode function using python3 ---
+percent_encode() {
+    python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1]))" "$1"
+}
+
+# Encode Mongo credentials
+export MESHCENTRAL_DB_USER_ENC=$(percent_encode "$MESHCENTRAL_DB_USER")
+export MESHCENTRAL_DB_PASSWORD_ENC=$(percent_encode "$MESHCENTRAL_DB_PASSWORD")
 
 # Set default values for optional variables if not set
 export CROWDSEC_LAPI_URL="${CROWDSEC_LAPI_URL:-http://crowdsec:8080}"
@@ -59,8 +77,8 @@ echo "  Template: $TEMPLATE_FILE"
 echo "  Output:   $OUTPUT_FILE"
 
 # Use envsubst to substitute variables
-# We need to explicitly list the variables to avoid substituting $schema
-ENVSUBST_VARS='$MESHCENTRAL_HOSTNAME $MESHCENTRAL_DB_USER $MESHCENTRAL_DB_PASSWORD $MONGO_DATABASE $CROWDSEC_LAPI_URL'
+# Be sure to use the _ENC variables in your template for mongo
+ENVSUBST_VARS='$MESHCENTRAL_HOSTNAME $MESHCENTRAL_DB_USER_ENC $MESHCENTRAL_DB_PASSWORD_ENC $MONGO_DATABASE $CROWDSEC_LAPI_URL'
 envsubst "$ENVSUBST_VARS" < "$TEMPLATE_FILE" > "$OUTPUT_FILE"
 
 # Verify the output is valid JSON
