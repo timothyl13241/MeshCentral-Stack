@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/Ylianst/MeshCentral/master/meshcentral-config-schema.json",
   "settings": {
     "Cert": "${MESHCENTRAL_HOSTNAME}",
-    "MongoDb": "mongodb://${MESHCENTRAL_DB_USER}:${MESHCENTRAL_DB_PASSWORD}@mongodb:27017/${MONGO_DATABASE}",
+    "MongoDb": "mongodb://${MESHCENTRAL_DB_USER_ENC}:${MESHCENTRAL_DB_PASSWORD_ENC}@mongodb:27017/${MONGO_DATABASE}",
     "MongoDbName": "${MONGO_DATABASE}",
     "WANonly": true,
     "Minify": true,
