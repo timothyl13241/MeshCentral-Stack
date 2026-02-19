@@ -140,8 +140,11 @@ services:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    hostname: ${MESHCENTRAL_HOSTNAME}
     networks:
       - meshcentral-frontend
+        aliases:
+          - ${MESHCENTRAL_HOSTNAME}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:2019/config/"]
       interval: 30s
