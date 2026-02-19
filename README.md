@@ -65,20 +65,42 @@ nano .env
 openssl rand -base64 32
 ```
 
-### 3. Update MeshCentral Configuration
+**Important:** After configuring your `.env` file, you must render the MeshCentral configuration before starting the stack (see next step).
 
-The `meshcentral-data/config.json` file is provided as a template. MeshCentral will create its own config.json in the Docker volume on first startup. The template includes a CrowdSec section with placeholder values that will be automatically updated when you run the CrowdSec init container.
+### 3. Render MeshCentral Configuration
 
-**Note:** If using CrowdSec, the init container will automatically update the config.json with the correct API key, so no manual configuration is needed.
-
-For advanced customization, you can manually edit the template before first startup:
+The MeshCentral configuration uses a template-based approach with environment variable substitution. You need to render the configuration file before starting the stack.
 
 ```bash
-# Manually edit config.json and replace ${VAR} with actual values
-nano meshcentral-data/config.json
+# Render the config.json from template
+./render-config.sh
 ```
 
-### 4. Start the Stack
+This script will:
+- Load variables from your `.env` file
+- Use `envsubst` to substitute all `${VARNAME}` placeholders in `meshcentral-data/config.json.template`
+- Generate `meshcentral-data/config.json` with actual values
+- Validate the generated JSON (if `jq` is installed)
+
+**Important:** You must run `./render-config.sh` whenever you change environment variables in `.env`.
+
+### 4. Update MeshCentral Configuration (Optional)
+
+The `meshcentral-data/config.json.template` file contains the base configuration with environment variable placeholders. The template includes a CrowdSec section with placeholder values that will be automatically updated when you run the CrowdSec init container.
+
+**Note:** If using CrowdSec, the init container will automatically update the rendered config.json with the correct API key, so no manual configuration is needed.
+
+For advanced customization, you can manually edit the template before rendering:
+
+```bash
+# Edit the template
+nano meshcentral-data/config.json.template
+
+# Re-render the configuration
+./render-config.sh
+```
+
+### 5. Start the Stack
 
 ```bash
 # Start basic stack (MeshCentral, MongoDB, Caddy)
@@ -94,7 +116,7 @@ docker-compose --profile cloudflare up -d
 docker-compose --profile crowdsec --profile cloudflare up -d
 ```
 
-### 5. Verify Installation
+### 6. Verify Installation
 
 ```bash
 # Check service status
@@ -107,7 +129,7 @@ docker-compose logs -f meshcentral
 curl -I https://your-domain.com
 ```
 
-### 6. Access MeshCentral
+### 7. Access MeshCentral
 
 Open your browser and navigate to:
 ```
@@ -286,6 +308,61 @@ This stack uses secure environment-based configuration to avoid hardcoded creden
 - Regularly rotate credentials
 
 See `.env.example` for all available configuration options.
+
+### Configuration Rendering Workflow
+
+The MeshCentral configuration uses a **host-driven, template-based approach** with environment variable substitution:
+
+1. **Template File**: `meshcentral-data/config.json.template` contains the base configuration with `${VARNAME}` placeholders
+2. **Environment Variables**: All variables are defined in your `.env` file
+3. **Rendering Script**: `render-config.sh` uses `envsubst` to substitute placeholders with actual values
+4. **Rendered Config**: `meshcentral-data/config.json` is generated with real values (excluded from git)
+5. **Docker Mount**: Only the rendered `config.json` is bind-mounted into the container (read-only)
+
+**Workflow:**
+
+```bash
+# 1. Configure environment variables
+cp .env.example .env
+nano .env
+
+# 2. Render the configuration
+./render-config.sh
+
+# 3. Start the stack
+docker-compose up -d
+```
+
+**Important Notes:**
+- Always run `./render-config.sh` before starting the stack for the first time
+- Re-run `./render-config.sh` whenever you change environment variables in `.env`
+- The template file (`config.json.template`) is tracked in git
+- The rendered file (`config.json`) is excluded from git and contains your actual secrets
+- The rendering script validates JSON output if `jq` is installed
+
+**Template Variables:**
+
+All environment variables in `.env` can be used in the template with `${VARNAME}` syntax:
+- `${MESHCENTRAL_HOSTNAME}` - Your domain name
+- `${MONGO_DATABASE}` - MongoDB database name
+- `${MESHCENTRAL_DB_USER}` - Database user
+- `${MESHCENTRAL_DB_PASSWORD}` - Database password
+- `${CROWDSEC_LAPI_URL:-http://crowdsec:8080}` - CrowdSec URL (with default value)
+
+**Customization:**
+
+To customize the MeshCentral configuration:
+
+```bash
+# Edit the template
+nano meshcentral-data/config.json.template
+
+# Re-render the configuration
+./render-config.sh
+
+# Restart the stack to apply changes
+docker-compose restart meshcentral
+```
 
 ## 🛡️ Security Best Practices
 
