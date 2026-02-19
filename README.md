@@ -100,7 +100,7 @@ nano meshcentral-data/config.json.template
 ./render-config.sh
 ```
 
-### 6. Start the Stack
+### 5. Start the Stack
 
 ```bash
 # Start basic stack (MeshCentral, MongoDB, Caddy)
@@ -116,7 +116,7 @@ docker-compose --profile cloudflare up -d
 docker-compose --profile crowdsec --profile cloudflare up -d
 ```
 
-### 7. Verify Installation
+### 6. Verify Installation
 
 ```bash
 # Check service status
@@ -129,7 +129,7 @@ docker-compose logs -f meshcentral
 curl -I https://your-domain.com
 ```
 
-### 8. Access MeshCentral
+### 7. Access MeshCentral
 
 Open your browser and navigate to:
 ```
