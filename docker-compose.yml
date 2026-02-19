@@ -73,6 +73,7 @@ services:
       CROWDSEC_LAPI_URL: ${CROWDSEC_LAPI_URL:-http://crowdsec:8080}
     networks:
       - meshcentral-backend
+      - meshcentral-frontend
     command: sh -c "apk add --no-cache docker-cli jq && sh /init_crowdsec.sh"
     profiles:
       - crowdsec-init  # Only run when explicitly enabled
