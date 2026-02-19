@@ -3,7 +3,7 @@
 	admin 0.0.0.0:2019
 	
 	# Email for ACME (Let's Encrypt)
-	email {$ACME_EMAIL}
+	email {env.ACME_EMAIL}
 	
 	# Enable automatic HTTPS
 	auto_https on
@@ -19,7 +19,7 @@
 }
 
 # MeshCentral site configuration
-{$MESHCENTRAL_HOSTNAME} {
+$MESHCENTRAL_HOSTNAME {
 	# Enable TLS
 	tls {
 		protocols tls1.2 tls1.3
@@ -104,6 +104,6 @@
 }
 
 # HTTP to HTTPS redirect (if needed)
-http://{$MESHCENTRAL_HOSTNAME} {
+http://$MESHCENTRAL_HOSTNAME {
 	redir https://{host}{uri} permanent
 }

@@ -199,7 +199,7 @@ The Cloudflare DNS challenge is configured in the Caddyfile template (`caddy/Cad
 
 ```
 # In the template:
-{$MESHCENTRAL_HOSTNAME} {
+$MESHCENTRAL_HOSTNAME {
   tls {
     protocols tls1.2 tls1.3
     dns cloudflare {env.CLOUDFLARE_API_TOKEN}
@@ -217,7 +217,7 @@ mesh.example.com {
 }
 ```
 
-Note: `{$MESHCENTRAL_HOSTNAME}` is substituted at deploy time, while `{env.CLOUDFLARE_API_TOKEN}` remains for runtime substitution by Caddy.
+Note: `$MESHCENTRAL_HOSTNAME` is substituted at deploy time by envsubst, while `{env.CLOUDFLARE_API_TOKEN}` remains for runtime substitution by Caddy.
 
 ### Verification
 
