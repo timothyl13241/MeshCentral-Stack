@@ -4,7 +4,8 @@
 .env.*.local
 
 # Docker volumes and persistent data
-meshcentral-data/
+meshcentral-data/*
+!meshcentral-data/config.json
 meshcentral-files/
 meshcentral-backup/
 meshcentral-web/
@@ -13,9 +14,10 @@ mongodb-config/
 caddy-data/
 caddy-config/
 
-# Exclude config.json if it contains secrets (keep the example)
-# Uncomment this if you generate a real config.json:
-# meshcentral-data/config.json
+# Note: meshcentral-data/config.json is tracked as an example template
+# If you generate a production config with real secrets, you can:
+# 1. Copy it to config.production.json and add that to .gitignore
+# 2. Or use environment variable substitution as shown in the README
 
 # MongoDB data and logs
 mongo-data/
