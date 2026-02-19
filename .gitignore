@@ -58,7 +58,6 @@ docker-compose.override.yml
 node_modules/
 
 # OS files
-.DS_Store
 .Spotlight-V100
 .Trashes
 ehthumbs.db

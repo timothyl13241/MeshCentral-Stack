@@ -2,8 +2,6 @@
 // This script creates the MeshCentral database and user with appropriate permissions
 
 // Get environment variables
-const rootUsername = process.env.MONGO_INITDB_ROOT_USERNAME;
-const rootPassword = process.env.MONGO_INITDB_ROOT_PASSWORD;
 const database = process.env.MONGO_INITDB_DATABASE;
 const meshcentralUser = process.env.MESHCENTRAL_USER;
 const meshcentralPassword = process.env.MESHCENTRAL_PASSWORD;
