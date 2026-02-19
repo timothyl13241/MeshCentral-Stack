@@ -66,7 +66,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./scripts/init_crowdsec.sh:/init_crowdsec.sh:ro
-      - meshcentral-data:/meshcentral-data
+      - ./meshcentral-data:/meshcentral-data
     environment:
       CROWDSEC_CONTAINER: ${CROWDSEC_CONTAINER:-meshcentral-crowdsec}
       CROWDSEC_BOUNCER_NAME: ${CROWDSEC_BOUNCER_NAME:-meshcentral}
