@@ -315,11 +315,11 @@ CrowdSec is an open-source security engine that analyzes visitor behavior and cr
 Start the stack with the CrowdSec profile enabled:
 
 ```bash
-# Start with CrowdSec protection (includes auto-setup)
+# Start with CrowdSec protection
 docker-compose --profile crowdsec up -d
 
-# Run the one-time init container to generate bouncer key
-docker-compose run --rm crowdsec-init
+# Run the one-time init container to generate bouncer key and update config
+docker-compose --profile crowdsec-init run --rm crowdsec-init
 
 # Restart MeshCentral to apply configuration
 docker-compose restart meshcentral
