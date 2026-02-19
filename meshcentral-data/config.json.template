@@ -21,7 +21,7 @@
       "coolofftime": 30
     },
     "crowdsec": {
-      "url": "${CROWDSEC_LAPI_URL:-http://crowdsec:8080}",
+      "url": "${CROWDSEC_LAPI_URL}",
       "apiKey": "AUTO_GENERATED_BY_STARTUP_SCRIPT",
       "fallbackRemediation": "bypass"
     }
