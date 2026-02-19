@@ -132,6 +132,7 @@ services:
     environment:
       ACME_EMAIL: ${ACME_EMAIL}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+      MESHCENTRAL_HOSTNAME: ${MESHCENTRAL_HOSTNAME}
     volumes:
       # Rendered Caddyfile - must be generated using render-caddyfile.sh before starting
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
