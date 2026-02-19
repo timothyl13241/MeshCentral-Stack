@@ -169,6 +169,9 @@ networks:
   meshcentral-frontend:
     driver: bridge
     internal: false
+    ipam:
+      config:
+        - subnet: 172.19.0.0/16
   meshcentral-backend:
     driver: bridge
     internal: true
