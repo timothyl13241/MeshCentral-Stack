@@ -112,7 +112,16 @@ nano caddy/Caddyfile
 ./render-config.sh
 ```
 
-### 5. Start the Stack
+### 5. Build the Caddy Image
+
+Caddy is built locally to include the Cloudflare DNS module (required for DNS-01 certificate challenges). The build uses a `golang:1.23-alpine` stage with [xcaddy](https://github.com/caddyserver/xcaddy) to compile Caddy with the plugin.
+
+```bash
+# Build the Caddy image with the Cloudflare DNS module
+docker compose build caddy
+```
+
+### 6. Start the Stack
 
 ```bash
 # Start basic stack (MeshCentral, MongoDB, Caddy)
@@ -128,7 +137,7 @@ docker-compose --profile cloudflare up -d
 docker-compose --profile crowdsec --profile cloudflare up -d
 ```
 
-### 6. Verify Installation
+### 7. Verify Installation
 
 ```bash
 # Check service status
@@ -141,7 +150,7 @@ docker-compose logs -f meshcentral
 curl -I https://your-domain.com
 ```
 
-### 7. Access MeshCentral
+### 8. Access MeshCentral
 
 Open your browser and navigate to:
 ```
