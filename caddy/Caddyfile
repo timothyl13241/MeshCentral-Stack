@@ -4,6 +4,9 @@
 	
 	# Email for ACME (Let's Encrypt)
 	email {$ACME_EMAIL}
+
+	# DNS configuration
+	acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
 	
 	# Log configuration
 	log {
