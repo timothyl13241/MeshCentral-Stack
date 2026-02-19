@@ -28,6 +28,55 @@ services:
       retries: 3
       start_period: 40s
 
+  # CrowdSec Security Engine (Optional - comment out if not using)
+  crowdsec:
+    image: crowdsecurity/crowdsec:latest
+    container_name: meshcentral-crowdsec
+    restart: unless-stopped
+    environment:
+      # CrowdSec collections to install
+      COLLECTIONS: "crowdsecurity/http-cve crowdsecurity/whitelist-good-actors crowdsecurity/iptables crowdsecurity/linux"
+      # Enable metrics
+      METRICS_ENABLED: "true"
+    volumes:
+      # CrowdSec configuration and database
+      - crowdsec-config:/etc/crowdsec
+      - crowdsec-data:/var/lib/crowdsec/data
+      # Mount Caddy logs for analysis
+      - caddy-data:/var/log/caddy:ro
+    networks:
+      - meshcentral-backend
+      - meshcentral-frontend
+    healthcheck:
+      test: ["CMD", "cscli", "version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles:
+      - crowdsec  # Only start when explicitly enabled
+
+  # CrowdSec Init Helper (Optional - only needed for automated setup)
+  crowdsec-init:
+    image: alpine:latest
+    container_name: meshcentral-crowdsec-init
+    depends_on:
+      crowdsec:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./scripts/init_crowdsec.sh:/init_crowdsec.sh:ro
+      - meshcentral-data:/meshcentral-data
+    environment:
+      CROWDSEC_CONTAINER: ${CROWDSEC_CONTAINER:-meshcentral-crowdsec}
+      CROWDSEC_BOUNCER_NAME: ${CROWDSEC_BOUNCER_NAME:-meshcentral}
+      CROWDSEC_LAPI_URL: ${CROWDSEC_LAPI_URL:-http://crowdsec:8080}
+    networks:
+      - meshcentral-backend
+    command: sh -c "apk add --no-cache docker-cli jq && sh /init_crowdsec.sh"
+    profiles:
+      - crowdsec-init  # Only run when explicitly enabled
+
   # MeshCentral Server
   meshcentral:
     image: ghcr.io/ylianst/meshcentral:latest
@@ -36,6 +85,9 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      crowdsec:
+        condition: service_healthy
+        required: false  # Optional dependency
     environment:
       # Hostname configuration
       HOSTNAME: ${MESHCENTRAL_HOSTNAME}
@@ -53,7 +105,8 @@ services:
       - meshcentral-files:/opt/meshcentral/meshcentral-files
       - meshcentral-backup:/opt/meshcentral/meshcentral-backup
       - meshcentral-web:/opt/meshcentral/meshcentral-web
-      - ./meshcentral-data/config.json:/opt/meshcentral/meshcentral-data/config.json:ro
+      # Template config - copy to volume on first startup
+      - ./meshcentral-data/config.json:/opt/meshcentral/meshcentral-data/config-template.json:ro
     networks:
       - meshcentral-backend
       - meshcentral-frontend
@@ -130,4 +183,8 @@ volumes:
   caddy-data:
     driver: local
   caddy-config:
+    driver: local
+  crowdsec-config:
+    driver: local
+  crowdsec-data:
     driver: local

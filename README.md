@@ -5,6 +5,7 @@ A secure, production-ready Docker Compose stack for [MeshCentral](https://meshce
 - **MeshCentral**: Remote device management server
 - **MongoDB**: Persistent database with authentication and encryption-at-rest capability
 - **Caddy**: Modern reverse proxy with automatic HTTPS via Let's Encrypt
+- **CrowdSec**: Optional automated intrusion prevention system with threat intelligence (Optional)
 - **Cloudflared**: Optional Cloudflare Tunnel integration for enhanced security
 
 ## 🔒 Security Features
@@ -18,6 +19,7 @@ A secure, production-ready Docker Compose stack for [MeshCentral](https://meshce
 - **Password Policies**: Enforced strong password requirements
 - **Rate Limiting**: Built-in login rate limiting and invalid login tracking
 - **Secrets Management**: Environment-based configuration with no hardcoded credentials
+- **CrowdSec Integration**: Automated threat intelligence and IP reputation-based blocking (Optional)
 
 ## 📋 Prerequisites
 
@@ -61,24 +63,31 @@ openssl rand -base64 32
 
 ### 3. Update MeshCentral Configuration
 
-The `meshcentral-data/config.json` file uses environment variable placeholders. For production, you may want to create a resolved version:
+The `meshcentral-data/config.json` file is provided as a template. MeshCentral will create its own config.json in the Docker volume on first startup. The template includes a CrowdSec section with placeholder values that will be automatically updated when you run the CrowdSec init container.
+
+**Note:** If using CrowdSec, the init container will automatically update the config.json with the correct API key, so no manual configuration is needed.
+
+For advanced customization, you can manually edit the template before first startup:
 
 ```bash
-# Option 1: Use envsubst to resolve variables (requires gettext package)
-envsubst < meshcentral-data/config.json > meshcentral-data/config.resolved.json
-
-# Option 2: Manually edit config.json and replace ${VAR} with actual values
+# Manually edit config.json and replace ${VAR} with actual values
 nano meshcentral-data/config.json
 ```
 
 ### 4. Start the Stack
 
 ```bash
-# Start without Cloudflare Tunnel
+# Start basic stack (MeshCentral, MongoDB, Caddy)
 docker-compose up -d
 
-# Or, start with Cloudflare Tunnel
+# Start with CrowdSec protection
+docker-compose --profile crowdsec up -d
+
+# Start with Cloudflare Tunnel
 docker-compose --profile cloudflare up -d
+
+# Or combine both CrowdSec and Cloudflare
+docker-compose --profile crowdsec --profile cloudflare up -d
 ```
 
 ### 5. Verify Installation
@@ -143,6 +152,20 @@ Create your first administrator account through the web interface.
 - **Profile**: `cloudflare` (must be explicitly enabled)
 - **Purpose**: Secure tunneling through Cloudflare network
 
+#### CrowdSec (Optional)
+- **Image**: `crowdsecurity/crowdsec:latest`
+- **Profile**: `crowdsec` (must be explicitly enabled)
+- **Port**: 8080 (LAPI, internal only)
+- **Features**:
+  - Automated bouncer key generation for MeshCentral
+  - Community-driven threat intelligence
+  - Real-time IP reputation blocking
+  - Log analysis from Caddy
+- **Volumes**:
+  - `crowdsec-config`: CrowdSec configuration
+  - `crowdsec-data`: Threat intelligence database
+  - `caddy-data`: Mounted read-only for log analysis
+
 ### Network Architecture
 
 ```
@@ -151,8 +174,8 @@ Internet
 [Cloudflared (optional)]
     ↓
 [Caddy Reverse Proxy] ← meshcentral-frontend (bridge)
-    ↓
-[MeshCentral] ← meshcentral-backend (internal)
+    ↓                      ↓ (logs)
+[MeshCentral] ←────────→ [CrowdSec (optional)] ← meshcentral-backend (internal)
     ↓
 [MongoDB]
 ```
@@ -273,6 +296,199 @@ In the Cloudflare dashboard:
 
 ```bash
 docker-compose --profile cloudflare up -d
+```
+
+## 🛡️ CrowdSec Integration Setup
+
+CrowdSec is an open-source security engine that analyzes visitor behavior and creates an IP reputation database. This stack includes automated integration with CrowdSec to protect your MeshCentral instance from malicious actors.
+
+### Features
+
+- **Automated Setup**: Bouncer API key is automatically generated via init container
+- **Persistent Configuration**: API key is stored securely with Docker volumes
+- **Flexible Integration**: Works with or without automation
+- **Threat Intelligence**: Blocks known malicious IPs based on community-driven threat intelligence
+
+### Quick Start (Automated)
+
+#### 1. Start with CrowdSec
+
+Start the stack with the CrowdSec profile enabled:
+
+```bash
+# Start with CrowdSec protection
+docker-compose --profile crowdsec up -d
+
+# Run the one-time init container to generate bouncer key and update config
+docker-compose --profile crowdsec-init run --rm crowdsec-init
+
+# Restart MeshCentral to apply configuration
+docker-compose restart meshcentral
+```
+
+The init container will:
+- Wait for CrowdSec LAPI to be ready
+- Generate a bouncer API key (or detect existing one)
+- Update the config.json with CrowdSec settings
+- Display the API key for your records
+
+#### 2. Verify Integration
+
+Check that CrowdSec is running and the bouncer was registered:
+
+```bash
+# Check CrowdSec status
+docker-compose ps crowdsec
+
+# List registered bouncers (should show 'meshcentral')
+docker exec meshcentral-crowdsec cscli bouncers list
+
+# Check MeshCentral logs
+docker-compose logs meshcentral | tail -20
+```
+
+### Manual Setup (Alternative)
+
+If you prefer manual configuration or need to regenerate keys:
+
+#### 1. Start CrowdSec
+
+```bash
+docker-compose --profile crowdsec up -d crowdsec
+```
+
+#### 2. Generate Bouncer Key
+
+```bash
+# Generate a new bouncer
+docker exec meshcentral-crowdsec cscli bouncers add meshcentral -o raw
+
+# Save the output - this is your API key
+```
+
+#### 3. Update MeshCentral Configuration
+
+Edit `meshcentral-data/config.json` and add the CrowdSec section under `settings`:
+
+```json
+{
+  "settings": {
+    ...
+    "crowdsec": {
+      "url": "http://crowdsec:8080",
+      "apiKey": "YOUR_API_KEY_HERE",
+      "fallbackRemediation": "bypass"
+    }
+  }
+}
+```
+
+#### 4. Restart MeshCentral
+
+```bash
+docker-compose restart meshcentral
+```
+
+### Testing CrowdSec Protection
+
+To verify CrowdSec is protecting your instance:
+
+```bash
+# Check CrowdSec metrics
+docker exec meshcentral-crowdsec cscli metrics
+
+# View blocked IPs (decisions)
+docker exec meshcentral-crowdsec cscli decisions list
+
+# Monitor CrowdSec alerts
+docker-compose logs -f crowdsec
+```
+
+### Configuration Options
+
+All CrowdSec settings can be customized in your `.env` file:
+
+```bash
+# CrowdSec container name
+CROWDSEC_CONTAINER=meshcentral-crowdsec
+
+# CrowdSec Local API URL (internal Docker network)
+CROWDSEC_LAPI_URL=http://crowdsec:8080
+
+# Bouncer name
+CROWDSEC_BOUNCER_NAME=meshcentral
+```
+
+### How the Automation Works
+
+The automated setup uses a lightweight Docker init container that:
+
+1. **Waits for CrowdSec**: Ensures the CrowdSec LAPI is fully operational
+2. **Checks for Existing Bouncer**: Avoids creating duplicate bouncers
+3. **Generates API Key**: Creates a new bouncer registration with `cscli`
+4. **Updates Config**: Modifies the MeshCentral config.json in the Docker volume
+5. **Validates**: Ensures the configuration is valid JSON before committing
+
+The init container runs once and exits. The bouncer API key persists in:
+- CrowdSec's database (in the `crowdsec-data` volume)
+- MeshCentral's config.json (in the `meshcentral-data` volume)
+
+### Advanced: Regenerating Bouncer Keys
+
+If you need to regenerate the bouncer key:
+
+```bash
+# Delete the existing bouncer
+docker exec meshcentral-crowdsec cscli bouncers delete meshcentral
+
+# Run the init container again
+docker-compose --profile crowdsec-init run --rm crowdsec-init
+
+# Restart MeshCentral
+docker-compose restart meshcentral
+```
+
+### Troubleshooting CrowdSec
+
+#### CrowdSec Not Starting
+
+```bash
+# Check CrowdSec logs for errors
+docker-compose logs crowdsec
+
+# Verify CrowdSec health
+docker exec meshcentral-crowdsec cscli version
+```
+
+#### Bouncer Key Not Generated
+
+```bash
+# Check MeshCentral startup logs
+docker-compose logs meshcentral | grep -A 20 "CrowdSec"
+
+# Manually verify Docker socket access
+docker exec meshcentral-app docker ps
+```
+
+#### MeshCentral Can't Connect to CrowdSec
+
+```bash
+# Test network connectivity
+docker exec meshcentral-app ping crowdsec
+
+# Verify CrowdSec LAPI is running
+docker exec meshcentral-crowdsec cscli lapi status
+```
+
+### Disabling CrowdSec
+
+To run the stack without CrowdSec protection:
+
+```bash
+# Start without the crowdsec profile
+docker-compose up -d
+
+# Remove CrowdSec configuration from config.json if desired
 ```
 
 ## 🔍 Troubleshooting
