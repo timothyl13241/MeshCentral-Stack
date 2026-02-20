@@ -6,6 +6,7 @@
 # Docker volumes and persistent data
 meshcentral-data/*
 !meshcentral-data/config.json.template
+!meshcentral-data/userallowedips.txt.example
 meshcentral-files/
 meshcentral-backup/
 meshcentral-web/

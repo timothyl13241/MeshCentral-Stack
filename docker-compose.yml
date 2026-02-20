@@ -42,8 +42,8 @@ services:
       # CrowdSec configuration and database
       - crowdsec-config:/etc/crowdsec
       - crowdsec-data:/var/lib/crowdsec/data
-      # Mount Caddy logs for analysis
-      - caddy-data:/var/log/caddy:ro
+      # Mount WAF logs for analysis
+      - waf-logs:/var/log/nginx:ro
     networks:
       - meshcentral-backend
       - meshcentral-frontend
@@ -93,7 +93,7 @@ services:
       # Hostname configuration
       HOSTNAME: ${MESHCENTRAL_HOSTNAME}
       # Reverse proxy settings
-      REVERSE_PROXY: ${REVERSE_PROXY:-caddy}
+      REVERSE_PROXY: ${REVERSE_PROXY:-nginx}
       REVERSE_PROXY_TLS_PORT: ${REVERSE_PROXY_TLS_PORT:-443}
       # MongoDB connection
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
@@ -120,7 +120,46 @@ services:
       retries: 3
       start_period: 60s
 
-  # Caddy Reverse Proxy
+  # WAF – nginx + ModSecurity + OWASP CRS (replaces Caddy as the default reverse proxy)
+  # Traffic flow: cloudflared → waf → meshcentral
+  # CrowdSec remains a sidecar and is not wired into nginx directly.
+  # Tip: pin to a specific digest/tag for reproducible security-critical deployments,
+  #      e.g. jasonish/nginx-modsecurity:1.0 instead of :latest.
+  waf:
+    image: jasonish/nginx-modsecurity:latest
+    container_name: meshcentral-waf
+    restart: unless-stopped
+    depends_on:
+      meshcentral:
+        condition: service_healthy
+    ports:
+      - "${WAF_HTTP_PORT:-80}:80"
+      - "${WAF_HTTPS_PORT:-443}:443"
+    volumes:
+      # nginx reverse-proxy configuration for MeshCentral
+      - ./waf/nginx.conf:/etc/nginx/conf.d/meshcentral.conf:ro
+      # ModSecurity + OWASP CRS settings
+      - ./waf/modsecurity.conf:/etc/nginx/modsecurity.conf:ro
+      # Persist WAF logs; CrowdSec mounts this volume for log analysis
+      - waf-logs:/var/log/nginx
+      # TLS certificates for the HTTPS listener (uncomment and adjust paths when
+      # terminating TLS at the WAF rather than relying on Cloudflare Tunnel):
+      # - ./waf/ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro
+      # - ./waf/ssl/key.pem:/etc/nginx/ssl/key.pem:ro
+    networks:
+      - meshcentral-frontend
+    # Health check verifies that the nginx process is accepting connections.
+    # End-to-end connectivity to MeshCentral is guaranteed at startup via
+    # depends_on (service_healthy on the meshcentral container).
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # Caddy Reverse Proxy (Optional – use instead of waf when automatic HTTPS via
+  # Let's Encrypt / Cloudflare DNS challenge is preferred over nginx+ModSecurity)
   caddy:
     build:
       context: ./caddy
@@ -151,6 +190,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    profiles:
+      - caddy  # Only start when explicitly enabled
 
   # Cloudflared Tunnel (Optional - remove if not using Cloudflare Tunnel)
   cloudflared:
@@ -158,7 +199,7 @@ services:
     container_name: meshcentral-cloudflared
     restart: unless-stopped
     depends_on:
-      caddy:
+      waf:
         condition: service_healthy
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
     networks:
@@ -197,4 +238,6 @@ volumes:
   crowdsec-config:
     driver: local
   crowdsec-data:
+    driver: local
+  waf-logs:
     driver: local
