@@ -140,7 +140,7 @@ services:
       - "${WAF_HTTPS_PORT:-443}:443"
     environment:
       # Backend: internal MeshCentral application container (protocol + host + port)
-      BACKEND: ${WAF_BACKEND:-http://meshcentral-app:4430}
+      BACKEND: ${WAF_BACKEND:-https://meshcentral:4430}
       # ModSecurity engine mode: DetectionOnly (log only) or On (actively block)
       # Note: waf/modsecurity.conf (mounted below) also sets SecRuleEngine and takes
       # precedence over this variable; keep both in sync when changing modes.
