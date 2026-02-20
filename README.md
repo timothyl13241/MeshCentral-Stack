@@ -316,9 +316,9 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
   - Configurable engine mode: `DetectionOnly` for logging, `On` for active blocking
   - WebSocket pass-through for MeshCentral agent connections
   - JSON audit logging at `/var/log/nginx/modsec_audit.log`
-- **Config files**:
-  - `waf/nginx.conf` – nginx reverse-proxy configuration (proxies to `meshcentral:4430`)
-  - `waf/modsecurity.conf` – ModSecurity engine settings and OWASP CRS include
+- **Configuration**: Fully environment-variable-driven — no nginx config files are bind-mounted. All settings are passed via the `environment` section in `docker-compose.yml` (see `.env.example` for the full list of `WAF_*` variables).
+- **Override file**:
+  - `waf/modsecurity.conf` – ModSecurity engine settings and audit logging; mounted as `/etc/modsecurity.d/modsecurity-override.conf` inside the container
 - **Volumes**:
   - `waf-logs`: Persists nginx/ModSecurity logs; mounted read-only by CrowdSec for log analysis
 
@@ -590,21 +590,53 @@ docker compose --profile cloudflare up -d
 docker compose --profile crowdsec up -d
 ```
 
-### Configuration Files
+### Configuration
 
-- **`waf/default.conf`** – nginx reverse-proxy config; proxies all traffic (including WebSocket) to `meshcentral-app:4430` after WAF inspection. Loaded as `/etc/nginx/conf.d/default.conf` inside the container.
-- **`waf/modsecurity.conf`** – ModSecurity override settings (engine mode, audit logging). Loaded as `/etc/modsecurity.d/modsecurity-override.conf` inside the container. The OWASP CRS rule set is already bundled in the image and loaded via `/etc/modsecurity.d/setup.conf`.
+The WAF is fully configured via environment variables — no nginx config files need to be edited or mounted. All `WAF_*` variables are defined in your `.env` file and passed to the container via `docker-compose.yml`.
+
+| Variable (`.env`) | Container variable | Default | Description |
+|---|---|---|---|
+| `WAF_BACKEND` | `BACKEND` | `http://meshcentral-app:4430` | Upstream MeshCentral URL |
+| `WAF_MODSEC_RULE_ENGINE` | `MODSEC_RULE_ENGINE` | `DetectionOnly` | ModSecurity engine mode (`DetectionOnly` or `On`) |
+| `WAF_PROXY_TIMEOUT` | `PROXY_TIMEOUT` / `PROXY_READ_TIMEOUT` / `PROXY_SEND_TIMEOUT` | `3600s` | Proxy read/send/connect timeout |
+| `WAF_SSL_CERT` | `SSL_CERT` | `/etc/nginx/ssl/cert.pem` | Path to TLS certificate inside the container |
+| `WAF_SSL_CERT_KEY` | `SSL_CERT_KEY` | `/etc/nginx/ssl/key.pem` | Path to TLS private key inside the container |
+| `WAF_HTTP_PORT` | _(host port)_ | `80` | Host HTTP port |
+| `WAF_HTTPS_PORT` | _(host port)_ | `443` | Host HTTPS port |
+
+The only file that is still bind-mounted is **`waf/modsecurity.conf`** (as `/etc/modsecurity.d/modsecurity-override.conf`), which controls ModSecurity audit logging and request/response body settings. The `SecRuleEngine` directive in that file takes precedence over `WAF_MODSEC_RULE_ENGINE`; keep both in sync when changing the engine mode.
+
+### TLS / Certificate Handling
+
+When using **Cloudflare Tunnel** (`cloudflared → waf`), TLS is terminated by Cloudflare so the WAF only needs to handle HTTP internally — no certificate configuration is required.
+
+To **terminate TLS directly at the WAF** instead:
+
+1. Place your certificate and private key in `waf/ssl/`:
+   ```
+   waf/ssl/cert.pem   →  mounted at  /etc/nginx/ssl/cert.pem  (WAF_SSL_CERT)
+   waf/ssl/key.pem    →  mounted at  /etc/nginx/ssl/key.pem   (WAF_SSL_CERT_KEY)
+   ```
+2. Uncomment the certificate volume mounts in the `waf` service in `docker-compose.yml`:
+   ```yaml
+   volumes:
+     - ./waf/ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro
+     - ./waf/ssl/key.pem:/etc/nginx/ssl/key.pem:ro
+   ```
+3. If you mount the files at different paths, set `WAF_SSL_CERT` and `WAF_SSL_CERT_KEY` in `.env` accordingly.
 
 ### Tuning ModSecurity
 
-The engine starts in `DetectionOnly` mode (log only, no blocking). Once you have verified that legitimate traffic is not being flagged, switch to blocking mode by editing `waf/modsecurity.conf`:
+The engine starts in `DetectionOnly` mode (log only, no blocking). Once you have verified that legitimate traffic is not being flagged, switch to blocking mode by updating **both**:
 
-```
-# Change this line:
-SecRuleEngine DetectionOnly
-# To:
-SecRuleEngine On
-```
+1. Set `WAF_MODSEC_RULE_ENGINE=On` in your `.env` file.
+2. Update `waf/modsecurity.conf` to match:
+   ```
+   # Change this line:
+   SecRuleEngine DetectionOnly
+   # To:
+   SecRuleEngine On
+   ```
 
 Then restart the WAF container:
 
