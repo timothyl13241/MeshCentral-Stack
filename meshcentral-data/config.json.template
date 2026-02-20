@@ -28,7 +28,7 @@
   },
   "domains": {
     "": {
-      "Title": "MeshCentral",
+      "Title": "${MESHCENTRAL_SITE}",
       "Title2": "Remote Device Management",
       "NewAccounts": false,
       "UserNameIsEmail": false,
