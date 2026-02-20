@@ -20,7 +20,9 @@ RUN apk add --no-cache --update \
     automake \
     libtool \
     cmake \
-    pkgconfig
+    pkgconfig \
+    pcre2 \
+    pcre2-dev
 
 # Install ModSecurity v3
 RUN git clone --depth 1 https://github.com/SpiderLabs/ModSecurity /opt/ModSecurity && \
