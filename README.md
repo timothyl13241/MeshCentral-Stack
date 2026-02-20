@@ -115,14 +115,14 @@ nano caddy/Caddyfile
 
 ### 5. Build the WAF Image
 
-The WAF service uses a custom-built Docker image (defined in `waf/Dockerfile`) based on `owasp/modsecurity-crs:nginx-alpine`. It installs nginx, ModSecurity v3, and the OWASP Core Rule Set, and copies the MeshCentral-specific nginx reverse-proxy config and ModSecurity settings into the image.
+The WAF service uses a **fully custom-built Docker image** (defined in `waf/Dockerfile`) based on `nginx:alpine`. It compiles **ModSecurity v3**, the **ModSecurity-nginx connector**, and the **OWASP Core Rule Set** entirely from source — no pre-built demo images or `owasp/modsecurity-crs` base image required.
 
 ```bash
-# Build the custom WAF image
+# Build the custom WAF image (required before first start)
 docker compose build waf
 ```
 
-> **`waf/nginx.conf` changes require a rebuild** (`docker compose build waf && docker compose up -d waf`).
+> **`waf/default.conf` or `waf/nginx.conf` changes require a rebuild** (`docker compose build waf && docker compose up -d waf`).
 > **`waf/modsecurity.conf` changes only need a restart** (`docker compose restart waf`) because the file is also bind-mounted at runtime, overriding the baked-in copy.
 
 ### 6. (Optional) Build the Caddy Image
@@ -320,7 +320,7 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 - **Purpose**: Secure tunneling through Cloudflare network; connects to the WAF (`waf` service) in the default setup
 
 #### WAF – nginx + ModSecurity + OWASP CRS (Default reverse proxy)
-- **Build**: Custom image built from `waf/Dockerfile` (based on `owasp/modsecurity-crs:nginx-alpine`)
+- **Build**: Custom image built from `waf/Dockerfile` (nginx:alpine base; ModSecurity v3, ModSecurity-nginx connector, and OWASP CRS compiled from source)
 - **Ports**: 80 (HTTP), 443 (HTTPS)
 - **Purpose**: Default reverse proxy; Web Application Firewall that inspects all HTTP traffic before it reaches MeshCentral
 - **Features**:
@@ -329,8 +329,10 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
   - WebSocket pass-through for MeshCentral agent connections
   - JSON audit logging at `/var/log/nginx/modsec_audit.log`
 - **Configuration**:
-  - `waf/nginx.conf` – nginx reverse-proxy config; copied into the image at build time via the Dockerfile. References OWASP CRS rules via `/etc/modsecurity.d/setup.conf`.
+  - `waf/nginx.conf` – Main nginx config; loads the ModSecurity dynamic module. Copied into the image at build time.
+  - `waf/default.conf` – nginx reverse-proxy virtual-host config (upstream, ModSecurity, WebSocket, TLS). Copied into the image at build time.
   - `waf/modsecurity.conf` – ModSecurity engine settings (engine mode, body limits, audit logging); copied into the image at build time **and** bind-mounted at runtime for easy overrides without rebuilding.
+  - `waf/setup.conf` – Loads `modsecurity.conf` + OWASP CRS rules; referenced by nginx via `modsecurity_rules_file`. Copied into the image at build time.
 - **Volumes**:
   - `waf-logs`: Persists nginx/ModSecurity logs; mounted read-only by CrowdSec for log analysis
 
@@ -589,17 +591,29 @@ cloudflared → waf (nginx + ModSecurity + OWASP CRS) → meshcentral
 
 ### Building the WAF Image
 
-The WAF is a **custom-built Docker image** defined in `waf/Dockerfile`. It is based on the official `owasp/modsecurity-crs:nginx-alpine` image (nginx stable + ModSecurity v3 + OWASP CRS), and layers on top:
+The WAF is a **custom-built Docker image** defined in `waf/Dockerfile`. It is based on `nginx:alpine` and compiles the following entirely from source:
 
-- `waf/nginx.conf` – copied into the image as the nginx reverse-proxy config
-- `waf/modsecurity.conf` – copied into the image as ModSecurity production settings
+- **ModSecurity v3** – the WAF engine library
+- **ModSecurity-nginx connector** – dynamic nginx module that links the engine to nginx
+- **OWASP Core Rule Set (CRS)** – the rule set used for HTTP attack detection
+
+All configuration files are copied directly into the image at build time:
+
+| File | Destination in image | Purpose |
+|---|---|---|
+| `waf/nginx.conf` | `/etc/nginx/nginx.conf` | Main nginx config; loads the dynamic ModSecurity module |
+| `waf/default.conf` | `/etc/nginx/conf.d/default.conf` | Reverse-proxy virtual-host config |
+| `waf/modsecurity.conf` | `/etc/modsecurity.d/modsecurity.conf` | ModSecurity engine settings |
+| `waf/setup.conf` | `/etc/modsecurity.d/setup.conf` | Loads modsecurity.conf + OWASP CRS rules |
+
+No entrypoint templating, `envsubst`, or `.template` files are used. All configs are static and directly readable/editable.
 
 ```bash
 # Build the WAF image (required before first start)
 docker compose build waf
 ```
 
-> **Rebuild after config changes** to `waf/nginx.conf`. For `waf/modsecurity.conf` changes,
+> **Rebuild after config changes** to `waf/default.conf` or `waf/nginx.conf`. For `waf/modsecurity.conf` changes,
 > a rebuild is optional — the file is also bind-mounted at runtime so a container restart is enough.
 
 ### Starting the Stack with WAF
@@ -619,12 +633,14 @@ docker compose --profile crowdsec up -d
 
 ### Configuration
 
-The WAF nginx configuration (`waf/nginx.conf`) and ModSecurity settings (`waf/modsecurity.conf`) are maintained as files in the repository and baked into the Docker image at build time.
+The WAF configuration files are maintained as files in the repository and baked into the Docker image at build time.
 
 | File | Purpose | Update method |
 |---|---|---|
-| `waf/nginx.conf` | nginx reverse-proxy config (upstream, ModSecurity, WebSocket, TLS) | Edit file → `docker compose build waf && docker compose up -d waf` |
-| `waf/modsecurity.conf` | ModSecurity engine mode, body limits, audit logging | Edit file → `docker compose restart waf` (bind-mount overrides the baked-in copy on restart) |
+| `waf/nginx.conf` | Main nginx config (loads the ModSecurity module) | Edit file → `docker compose build waf && docker compose up -d waf` |
+| `waf/default.conf` | nginx reverse-proxy virtual-host config (upstream, ModSecurity, WebSocket, TLS) | Edit file → `docker compose build waf && docker compose up -d waf` |
+| `waf/modsecurity.conf` | ModSecurity engine mode, body limits, audit logging | Edit file → `docker compose restart waf` (bind-mount overrides baked-in copy on restart) |
+| `waf/setup.conf` | Loads modsecurity.conf + OWASP CRS rules | Edit file → `docker compose build waf && docker compose up -d waf` |
 
 Port variables are still read from `.env`:
 
