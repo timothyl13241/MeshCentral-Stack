@@ -120,16 +120,16 @@ services:
       retries: 3
       start_period: 60s
 
-  # WAF – nginx + ModSecurity + OWASP CRS (replaces Caddy as the default reverse proxy)
+  # WAF – nginx + ModSecurity + OWASP CRS (default reverse proxy)
   # Traffic flow: cloudflared → waf → meshcentral
-  # CrowdSec remains a sidecar and is not wired into nginx directly.
-  # Tip: pin to a specific digest/tag for reproducible security-critical deployments,
-  #      e.g. owasp/modsecurity-crs:nginx-alpine-4 instead of :nginx.
-  #
-  # All WAF behaviour is driven by environment variables; no nginx config files are
-  # bind-mounted. See .env.example for the full list of WAF_ variables.
+  # Built from waf/Dockerfile (owasp/modsecurity-crs:nginx-alpine base).
+  # nginx config (waf/nginx.conf) and ModSecurity settings (waf/modsecurity.conf)
+  # are copied into the image at build time.
+  # Rebuild after config changes: docker compose build waf
   waf:
-    image: owasp/modsecurity-crs:nginx
+    build:
+      context: ./waf
+      dockerfile: Dockerfile
     container_name: meshcentral-waf
     restart: unless-stopped
     depends_on:
@@ -138,33 +138,16 @@ services:
     ports:
       - "${WAF_HTTP_PORT:-80}:80"
       - "${WAF_HTTPS_PORT:-443}:443"
-    environment:
-      # Backend: internal MeshCentral application container (protocol + host + port)
-      BACKEND: ${WAF_BACKEND:-https://meshcentral:4430}
-      # ModSecurity engine mode: DetectionOnly (log only) or On (actively block)
-      # Note: waf/modsecurity.conf (mounted below) also sets SecRuleEngine and takes
-      # precedence over this variable; keep both in sync when changing modes.
-      MODSEC_RULE_ENGINE: ${WAF_MODSEC_RULE_ENGINE:-DetectionOnly}
-      # Increase proxy timeouts for long-lived MeshCentral agent connections
-      PROXY_TIMEOUT: ${WAF_PROXY_TIMEOUT:-3600s}
-      PROXY_READ_TIMEOUT: ${WAF_PROXY_TIMEOUT:-3600s}
-      PROXY_SEND_TIMEOUT: ${WAF_PROXY_TIMEOUT:-3600s}
-      # TLS certificate paths inside the container.
-      # To terminate TLS at the WAF (instead of relying on Cloudflare Tunnel),
-      # place your certificate and key in waf/ssl/, uncomment the volume mounts
-      # below, and override these variables in .env (WAF_SSL_CERT / WAF_SSL_CERT_KEY):
-      SSL_CERT: ${WAF_SSL_CERT:-/etc/nginx/ssl/cert.pem}
-      SSL_CERT_KEY: ${WAF_SSL_CERT_KEY:-/etc/nginx/ssl/key.pem}
     volumes:
-      # ModSecurity override settings (engine mode, audit logging, etc.)
-      # The OWASP CRS image already loads modsecurity.conf + CRS via setup.conf;
-      # modsecurity-override.conf is the correct place for user overrides.
-      # - ./waf/modsecurity.conf:/etc/modsecurity.d/modsecurity-override.conf:ro
+      # ModSecurity settings (engine mode, audit logging, etc.)
+      # Also baked into the image at build time; this bind-mount overrides the
+      # baked-in copy at runtime, so you can tune SecRuleEngine / limits with
+      # only a container restart instead of a full image rebuild.
+      - ./waf/modsecurity.conf:/etc/modsecurity.d/modsecurity-override.conf:ro
       # Persist WAF logs; CrowdSec mounts this volume for log analysis
       - waf-logs:/var/log/nginx
       # TLS certificates for the HTTPS listener.
-      # Place your files in waf/ssl/ and uncomment when terminating TLS at the WAF.
-      # Set WAF_SSL_CERT / WAF_SSL_CERT_KEY in .env if you use different paths:
+      # Place your files in waf/ssl/ and uncomment when terminating TLS at the WAF:
       # - ./waf/ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro
       # - ./waf/ssl/key.pem:/etc/nginx/ssl/key.pem:ro
     networks:

@@ -113,7 +113,19 @@ nano caddy/Caddyfile
 ./render-config.sh
 ```
 
-### 5. (Optional) Build the Caddy Image
+### 5. Build the WAF Image
+
+The WAF service uses a custom-built Docker image (defined in `waf/Dockerfile`) based on `owasp/modsecurity-crs:nginx-alpine`. It installs nginx, ModSecurity v3, and the OWASP Core Rule Set, and copies the MeshCentral-specific nginx reverse-proxy config and ModSecurity settings into the image.
+
+```bash
+# Build the custom WAF image
+docker compose build waf
+```
+
+> **`waf/nginx.conf` changes require a rebuild** (`docker compose build waf && docker compose up -d waf`).
+> **`waf/modsecurity.conf` changes only need a restart** (`docker compose restart waf`) because the file is also bind-mounted at runtime, overriding the baked-in copy.
+
+### 6. (Optional) Build the Caddy Image
 
 > **Only needed if you want to use Caddy** instead of the default WAF (nginx + ModSecurity).
 > Caddy is built locally to include the Cloudflare DNS module (required for DNS-01 certificate challenges).
@@ -123,7 +135,7 @@ nano caddy/Caddyfile
 docker compose build caddy
 ```
 
-### 6. Start the Stack
+### 7. Start the Stack
 
 ```bash
 # Start default stack (MeshCentral, MongoDB, WAF)
@@ -142,7 +154,7 @@ docker compose --profile crowdsec --profile cloudflare up -d
 docker compose --profile caddy up -d
 ```
 
-### 7. Verify Installation
+### 8. Verify Installation
 
 ```bash
 # Check service status
@@ -155,7 +167,7 @@ docker compose logs -f meshcentral
 curl -I https://your-domain.com
 ```
 
-### 8. Access MeshCentral
+### 9. Access MeshCentral
 
 Open your browser and navigate to:
 ```
@@ -308,7 +320,7 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 - **Purpose**: Secure tunneling through Cloudflare network; connects to the WAF (`waf` service) in the default setup
 
 #### WAF – nginx + ModSecurity + OWASP CRS (Default reverse proxy)
-- **Image**: `owasp/modsecurity-crs:nginx`
+- **Build**: Custom image built from `waf/Dockerfile` (based on `owasp/modsecurity-crs:nginx-alpine`)
 - **Ports**: 80 (HTTP), 443 (HTTPS)
 - **Purpose**: Default reverse proxy; Web Application Firewall that inspects all HTTP traffic before it reaches MeshCentral
 - **Features**:
@@ -316,9 +328,9 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
   - Configurable engine mode: `DetectionOnly` for logging, `On` for active blocking
   - WebSocket pass-through for MeshCentral agent connections
   - JSON audit logging at `/var/log/nginx/modsec_audit.log`
-- **Configuration**: Fully environment-variable-driven — no nginx config files are bind-mounted. All settings are passed via the `environment` section in `docker-compose.yml` (see `.env.example` for the full list of `WAF_*` variables).
-- **Override file**:
-  - `waf/modsecurity.conf` – ModSecurity engine settings and audit logging; mounted as `/etc/modsecurity.d/modsecurity-override.conf` inside the container
+- **Configuration**:
+  - `waf/nginx.conf` – nginx reverse-proxy config; copied into the image at build time via the Dockerfile. References OWASP CRS rules via `/etc/modsecurity.d/setup.conf`.
+  - `waf/modsecurity.conf` – ModSecurity engine settings (engine mode, body limits, audit logging); copied into the image at build time **and** bind-mounted at runtime for easy overrides without rebuilding.
 - **Volumes**:
   - `waf-logs`: Persists nginx/ModSecurity logs; mounted read-only by CrowdSec for log analysis
 
@@ -575,6 +587,21 @@ The WAF service is the **default reverse proxy** for this stack. It sits in fron
 cloudflared → waf (nginx + ModSecurity + OWASP CRS) → meshcentral
 ```
 
+### Building the WAF Image
+
+The WAF is a **custom-built Docker image** defined in `waf/Dockerfile`. It is based on the official `owasp/modsecurity-crs:nginx-alpine` image (nginx stable + ModSecurity v3 + OWASP CRS), and layers on top:
+
+- `waf/nginx.conf` – copied into the image as the nginx reverse-proxy config
+- `waf/modsecurity.conf` – copied into the image as ModSecurity production settings
+
+```bash
+# Build the WAF image (required before first start)
+docker compose build waf
+```
+
+> **Rebuild after config changes** to `waf/nginx.conf`. For `waf/modsecurity.conf` changes,
+> a rebuild is optional — the file is also bind-mounted at runtime so a container restart is enough.
+
 ### Starting the Stack with WAF
 
 The WAF starts automatically with `docker compose up -d` — no extra profile flag required:
@@ -592,19 +619,19 @@ docker compose --profile crowdsec up -d
 
 ### Configuration
 
-The WAF is fully configured via environment variables — no nginx config files need to be edited or mounted. All `WAF_*` variables are defined in your `.env` file and passed to the container via `docker-compose.yml`.
+The WAF nginx configuration (`waf/nginx.conf`) and ModSecurity settings (`waf/modsecurity.conf`) are maintained as files in the repository and baked into the Docker image at build time.
 
-| Variable (`.env`) | Container variable | Default | Description |
-|---|---|---|---|
-| `WAF_BACKEND` | `BACKEND` | `http://meshcentral-app:4430` | Upstream MeshCentral URL |
-| `WAF_MODSEC_RULE_ENGINE` | `MODSEC_RULE_ENGINE` | `DetectionOnly` | ModSecurity engine mode (`DetectionOnly` or `On`) |
-| `WAF_PROXY_TIMEOUT` | `PROXY_TIMEOUT` / `PROXY_READ_TIMEOUT` / `PROXY_SEND_TIMEOUT` | `3600s` | Proxy read/send/connect timeout |
-| `WAF_SSL_CERT` | `SSL_CERT` | `/etc/nginx/ssl/cert.pem` | Path to TLS certificate inside the container |
-| `WAF_SSL_CERT_KEY` | `SSL_CERT_KEY` | `/etc/nginx/ssl/key.pem` | Path to TLS private key inside the container |
-| `WAF_HTTP_PORT` | _(host port)_ | `80` | Host HTTP port |
-| `WAF_HTTPS_PORT` | _(host port)_ | `443` | Host HTTPS port |
+| File | Purpose | Update method |
+|---|---|---|
+| `waf/nginx.conf` | nginx reverse-proxy config (upstream, ModSecurity, WebSocket, TLS) | Edit file → `docker compose build waf && docker compose up -d waf` |
+| `waf/modsecurity.conf` | ModSecurity engine mode, body limits, audit logging | Edit file → `docker compose restart waf` (bind-mount overrides the baked-in copy on restart) |
 
-The only file that is still bind-mounted is **`waf/modsecurity.conf`** (as `/etc/modsecurity.d/modsecurity-override.conf`), which controls ModSecurity audit logging and request/response body settings. The `SecRuleEngine` directive in that file takes precedence over `WAF_MODSEC_RULE_ENGINE`; keep both in sync when changing the engine mode.
+Port variables are still read from `.env`:
+
+| Variable (`.env`) | Default | Description |
+|---|---|---|
+| `WAF_HTTP_PORT` | `80` | Host HTTP port |
+| `WAF_HTTPS_PORT` | `443` | Host HTTPS port |
 
 ### TLS / Certificate Handling
 
@@ -614,8 +641,8 @@ To **terminate TLS directly at the WAF** instead:
 
 1. Place your certificate and private key in `waf/ssl/`:
    ```
-   waf/ssl/cert.pem   →  mounted at  /etc/nginx/ssl/cert.pem  (WAF_SSL_CERT)
-   waf/ssl/key.pem    →  mounted at  /etc/nginx/ssl/key.pem   (WAF_SSL_CERT_KEY)
+   waf/ssl/cert.pem   →  mounted at  /etc/nginx/ssl/cert.pem
+   waf/ssl/key.pem    →  mounted at  /etc/nginx/ssl/key.pem
    ```
 2. Uncomment the certificate volume mounts in the `waf` service in `docker-compose.yml`:
    ```yaml
@@ -623,14 +650,12 @@ To **terminate TLS directly at the WAF** instead:
      - ./waf/ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro
      - ./waf/ssl/key.pem:/etc/nginx/ssl/key.pem:ro
    ```
-3. If you mount the files at different paths, set `WAF_SSL_CERT` and `WAF_SSL_CERT_KEY` in `.env` accordingly.
 
 ### Tuning ModSecurity
 
-The engine starts in `DetectionOnly` mode (log only, no blocking). Once you have verified that legitimate traffic is not being flagged, switch to blocking mode by updating **both**:
+The engine starts in `DetectionOnly` mode (log only, no blocking). Once you have verified that legitimate traffic is not being flagged, switch to blocking mode:
 
-1. Set `WAF_MODSEC_RULE_ENGINE=On` in your `.env` file.
-2. Update `waf/modsecurity.conf` to match:
+1. Update `waf/modsecurity.conf`:
    ```
    # Change this line:
    SecRuleEngine DetectionOnly
@@ -638,7 +663,7 @@ The engine starts in `DetectionOnly` mode (log only, no blocking). Once you have
    SecRuleEngine On
    ```
 
-Then restart the WAF container:
+2. Restart the WAF container to apply the change:
 
 ```bash
 docker compose restart waf
