@@ -1,26 +1,24 @@
-# Production-ready WAF: nginx + ModSecurity v3 + OWASP Core Rule Set
-#
-# Built on the official OWASP ModSecurity CRS nginx image (Alpine variant)
-# for a minimal, auditable attack surface.  The base image installs:
-#   - nginx (stable)
-#   - ModSecurity v3 nginx connector
-#   - OWASP CRS rules (loaded via /etc/modsecurity.d/setup.conf)
-#
-# Build:  docker compose build waf
-# Run:    docker compose up -d
-FROM owasp/modsecurity-crs:nginx-alpine
+FROM nginx:alpine
 
-# ── Custom nginx reverse-proxy configuration ───────────────────────────────
-# The OWASP CRS image uses the nginx template mechanism: *.conf.template files
-# placed in /etc/nginx/templates/conf.d/ are rendered to /etc/nginx/conf.d/
-# by envsubst at container startup.  nginx variables such as $host and
-# $remote_addr are NOT environment variables in the container, so envsubst
-# leaves them untouched — they are interpreted by nginx at runtime as normal.
-COPY nginx.conf /etc/nginx/templates/conf.d/default.conf.template
+# Install dependencies for ModSecurity and build tools
+RUN apk add --no-cache --update git gcc g++ make pcre-dev zlib-dev libxml2 libxml2-dev libxslt-dev linux-headers curl tzdata openssl-dev bash libcurl
 
-# ── ModSecurity production settings ────────────────────────────────────────
-# This file is loaded after the OWASP CRS defaults and overrides:
-#   - SecRuleEngine mode (DetectionOnly → On to enable active blocking)
-#   - Request / response body processing limits
-#   - Audit log format and output path (used by CrowdSec for log analysis)
-COPY modsecurity.conf /etc/modsecurity.d/modsecurity-override.conf
+# Install ModSecurity v3
+RUN git clone --depth 1 https://github.com/SpiderLabs/ModSecurity /opt/ModSecurity && \
+    cd /opt/ModSecurity && \
+    git submodule update --init --recursive && \
+    ./build.sh && \
+    ./configure && \
+    make && make install
+
+# Install ModSecurity nginx connector
+RUN git clone --depth 1 https://github.com/SpiderLabs/ModSecurity-nginx.git /opt/ModSecurity-nginx && \
+    # Download the nginx source version matching the current image and build module (see NGINX_VERSION) ...
+    # (see below for details)
+
+# Install OWASP CRS
+RUN git clone --depth 1 https://github.com/coreruleset/coreruleset.git /etc/modsecurity.d/owasp-crs
+
+# Copy in the recommended configs (mounted from your repo)
+COPY default.conf /etc/nginx/conf.d/default.conf
+COPY modsecurity.conf /etc/modsecurity.d/modsecurity.conf
