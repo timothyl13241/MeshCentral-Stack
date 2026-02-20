@@ -159,7 +159,7 @@ services:
       # ModSecurity override settings (engine mode, audit logging, etc.)
       # The OWASP CRS image already loads modsecurity.conf + CRS via setup.conf;
       # modsecurity-override.conf is the correct place for user overrides.
-      - ./waf/modsecurity.conf:/etc/modsecurity.d/modsecurity-override.conf:ro
+      # - ./waf/modsecurity.conf:/etc/modsecurity.d/modsecurity-override.conf:ro
       # Persist WAF logs; CrowdSec mounts this volume for log analysis
       - waf-logs:/var/log/nginx
       # TLS certificates for the HTTPS listener.
