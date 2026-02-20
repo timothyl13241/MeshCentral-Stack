@@ -308,7 +308,7 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 - **Purpose**: Secure tunneling through Cloudflare network; connects to the WAF (`waf` service) in the default setup
 
 #### WAF – nginx + ModSecurity + OWASP CRS (Default reverse proxy)
-- **Image**: `jasonish/nginx-modsecurity:latest`
+- **Image**: `owasp/modsecurity-crs:nginx`
 - **Ports**: 80 (HTTP), 443 (HTTPS)
 - **Purpose**: Default reverse proxy; Web Application Firewall that inspects all HTTP traffic before it reaches MeshCentral
 - **Features**:
@@ -592,8 +592,8 @@ docker compose --profile crowdsec up -d
 
 ### Configuration Files
 
-- **`waf/nginx.conf`** – nginx reverse-proxy config; proxies all traffic (including WebSocket) to `meshcentral:4430` after WAF inspection. Loaded as `/etc/nginx/conf.d/meshcentral.conf` inside the container.
-- **`waf/modsecurity.conf`** – ModSecurity engine settings and OWASP CRS include. Loaded at `/etc/nginx/modsecurity.conf` inside the container.
+- **`waf/default.conf`** – nginx reverse-proxy config; proxies all traffic (including WebSocket) to `meshcentral-app:4430` after WAF inspection. Loaded as `/etc/nginx/conf.d/default.conf` inside the container.
+- **`waf/modsecurity.conf`** – ModSecurity override settings (engine mode, audit logging). Loaded as `/etc/modsecurity.d/modsecurity-override.conf` inside the container. The OWASP CRS rule set is already bundled in the image and loaded via `/etc/modsecurity.d/setup.conf`.
 
 ### Tuning ModSecurity
 

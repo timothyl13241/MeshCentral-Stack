@@ -124,9 +124,9 @@ services:
   # Traffic flow: cloudflared → waf → meshcentral
   # CrowdSec remains a sidecar and is not wired into nginx directly.
   # Tip: pin to a specific digest/tag for reproducible security-critical deployments,
-  #      e.g. jasonish/nginx-modsecurity:1.0 instead of :latest.
+  #      e.g. owasp/modsecurity-crs:nginx-alpine-4 instead of :nginx.
   waf:
-    image: jasonish/nginx-modsecurity:latest
+    image: owasp/modsecurity-crs:nginx
     container_name: meshcentral-waf
     restart: unless-stopped
     depends_on:
@@ -137,9 +137,11 @@ services:
       - "${WAF_HTTPS_PORT:-443}:443"
     volumes:
       # nginx reverse-proxy configuration for MeshCentral
-      - ./waf/nginx.conf:/etc/nginx/conf.d/meshcentral.conf:ro
-      # ModSecurity + OWASP CRS settings
-      - ./waf/modsecurity.conf:/etc/nginx/modsecurity.conf:ro
+      - ./waf/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # ModSecurity override settings (engine mode, audit logging, etc.)
+      # The OWASP CRS image already loads modsecurity.conf + CRS via setup.conf;
+      # modsecurity-override.conf is the correct place for user overrides.
+      - ./waf/modsecurity.conf:/etc/modsecurity.d/modsecurity-override.conf:ro
       # Persist WAF logs; CrowdSec mounts this volume for log analysis
       - waf-logs:/var/log/nginx
       # TLS certificates for the HTTPS listener (uncomment and adjust paths when
