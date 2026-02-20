@@ -15,7 +15,7 @@ RUN apk add --no-cache --update \
     tzdata \
     openssl-dev \
     bash \
-    libcurl-dev \
+    curl-dev \
     autoconf \
     automake \
     libtool \
