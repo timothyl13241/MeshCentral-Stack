@@ -122,8 +122,9 @@ services:
 
   # WAF – nginx + ModSecurity + OWASP CRS (default reverse proxy)
   # Traffic flow: cloudflared → waf → meshcentral
-  # Built from waf/Dockerfile (owasp/modsecurity-crs:nginx-alpine base).
-  # nginx config (waf/nginx.conf) and ModSecurity settings (waf/modsecurity.conf)
+  # Built from waf/Dockerfile (nginx:alpine base; ModSecurity v3, ModSecurity-nginx
+  # connector, and OWASP CRS compiled from source).
+  # nginx config (waf/default.conf) and ModSecurity settings (waf/modsecurity.conf)
   # are copied into the image at build time.
   # Rebuild after config changes: docker compose build waf
   waf:
@@ -139,11 +140,11 @@ services:
       - "${WAF_HTTP_PORT:-80}:80"
       - "${WAF_HTTPS_PORT:-443}:443"
     volumes:
-      # ModSecurity settings (engine mode, audit logging, etc.)
-      # Also baked into the image at build time; this bind-mount overrides the
-      # baked-in copy at runtime, so you can tune SecRuleEngine / limits with
-      # only a container restart instead of a full image rebuild.
-      - ./waf/modsecurity.conf:/etc/modsecurity.d/modsecurity-override.conf:ro
+      # ModSecurity engine settings (SecRuleEngine mode, body limits, audit logging).
+      # Baked into the image at build time; this bind-mount overrides the baked-in
+      # copy at runtime, so you can tune SecRuleEngine / limits with only a
+      # container restart instead of a full image rebuild.
+      - ./waf/modsecurity.conf:/etc/modsecurity.d/modsecurity.conf:ro
       # Persist WAF logs; CrowdSec mounts this volume for log analysis
       - waf-logs:/var/log/nginx
       # TLS certificates for the HTTPS listener.
