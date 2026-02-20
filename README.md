@@ -1,23 +1,24 @@
 # MeshCentral Docker Stack
 
-A secure, production-ready Docker Compose stack for [MeshCentral](https://meshcentral.com/), featuring automatic HTTPS with Caddy Cloudflare DNS challenge, secure environment variable management, and optional CrowdSec integration.
+A secure, production-ready Docker Compose stack for [MeshCentral](https://meshcentral.com/), featuring a Web Application Firewall (nginx + ModSecurity + OWASP CRS) as the default reverse proxy, secure environment variable management, and optional CrowdSec integration.
 
 ### Service Roles
 
 - **MeshCentral**: Remote device management server for monitoring and controlling devices remotely
 - **MongoDB**: Persistent database with required authentication and optional encryption-at-rest capability
-- **Caddy**: Modern reverse proxy with automatic HTTPS via Let's Encrypt using Cloudflare DNS challenge
-- **CrowdSec**: Optional automated intrusion prevention system with community-driven threat intelligence
-- **Cloudflared**: Optional Cloudflare Tunnel integration for enhanced security and zero-trust access
+- **WAF**: Default reverse proxy — nginx + ModSecurity + OWASP CRS for HTTP attack detection/blocking (`cloudflared → waf → meshcentral`)
+- **Caddy**: Optional alternative reverse proxy with automatic HTTPS via Let's Encrypt using Cloudflare DNS challenge (profile: `caddy`)
+- **CrowdSec**: Optional automated intrusion prevention system with community-driven threat intelligence (profile: `crowdsec`)
+- **Cloudflared**: Optional Cloudflare Tunnel integration for enhanced security and zero-trust access (profile: `cloudflare`)
 
 ## 🔒 Security Features
 
 - **Network Isolation**: Separate frontend and internal backend networks
 - **MongoDB Authentication**: Required database authentication with dedicated user accounts
 - **Encrypted Storage Ready**: MongoDB configured for encryption-at-rest capability
-- **TLS Termination**: Automatic HTTPS certificates via Let's Encrypt with Cloudflare DNS challenge
-- **Security Headers**: HSTS, CSP, X-Frame-Options, and more
-- **Real IP Preservation**: Proper forwarding of CF-Connecting-IP for accurate logging and rate limiting
+- **Web Application Firewall**: nginx + ModSecurity + OWASP CRS blocks common HTTP attacks (SQLi, XSS, RCE, etc.)
+- **Security Headers**: HSTS, CSP, X-Frame-Options, and more (add to nginx config as required)
+- **Real IP Preservation**: Proper forwarding of client IP through the proxy chain for accurate logging and rate limiting
 - **Password Policies**: Enforced strong password requirements
 - **Rate Limiting**: Built-in login rate limiting and invalid login tracking
 - **Secrets Management**: Secure environment-based configuration with no hardcoded credentials
@@ -112,9 +113,10 @@ nano caddy/Caddyfile
 ./render-config.sh
 ```
 
-### 5. Build the Caddy Image
+### 5. (Optional) Build the Caddy Image
 
-Caddy is built locally to include the Cloudflare DNS module (required for DNS-01 certificate challenges). The build uses a `golang:1.23-alpine` stage with [xcaddy](https://github.com/caddyserver/xcaddy) to compile Caddy with the plugin.
+> **Only needed if you want to use Caddy** instead of the default WAF (nginx + ModSecurity).
+> Caddy is built locally to include the Cloudflare DNS module (required for DNS-01 certificate challenges).
 
 ```bash
 # Build the Caddy image with the Cloudflare DNS module
@@ -124,17 +126,20 @@ docker compose build caddy
 ### 6. Start the Stack
 
 ```bash
-# Start basic stack (MeshCentral, MongoDB, Caddy)
+# Start default stack (MeshCentral, MongoDB, WAF)
 docker compose up -d
 
 # Start with CrowdSec protection
 docker compose --profile crowdsec up -d
 
-# Start with Cloudflare Tunnel
+# Start with Cloudflare Tunnel (cloudflared → waf → meshcentral)
 docker compose --profile cloudflare up -d
 
-# Or combine both CrowdSec and Cloudflare
+# Or combine CrowdSec and Cloudflare Tunnel
 docker compose --profile crowdsec --profile cloudflare up -d
+
+# Use Caddy instead of the WAF (alternative – not both at the same time on the same ports)
+docker compose --profile caddy up -d
 ```
 
 ### 7. Verify Installation
@@ -281,8 +286,9 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
   - `mongodb-data`: Database files
   - `mongodb-config`: MongoDB configuration
 
-#### Caddy
+#### Caddy (Optional)
 - **Image**: `caddy:2-alpine`
+- **Profile**: `caddy` (must be explicitly enabled; alternative to the default WAF)
 - **Ports**: 
   - 80 (HTTP, redirects to HTTPS)
   - 443 (HTTPS)
@@ -299,7 +305,22 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 #### Cloudflared (Optional)
 - **Image**: `cloudflare/cloudflared:latest`
 - **Profile**: `cloudflare` (must be explicitly enabled)
-- **Purpose**: Secure tunneling through Cloudflare network
+- **Purpose**: Secure tunneling through Cloudflare network; connects to the WAF (`waf` service) in the default setup
+
+#### WAF – nginx + ModSecurity + OWASP CRS (Default reverse proxy)
+- **Image**: `jasonish/nginx-modsecurity:latest`
+- **Ports**: 80 (HTTP), 443 (HTTPS)
+- **Purpose**: Default reverse proxy; Web Application Firewall that inspects all HTTP traffic before it reaches MeshCentral
+- **Features**:
+  - ModSecurity v3 with OWASP Core Rule Set for broad HTTP attack detection
+  - Configurable engine mode: `DetectionOnly` for logging, `On` for active blocking
+  - WebSocket pass-through for MeshCentral agent connections
+  - JSON audit logging at `/var/log/nginx/modsec_audit.log`
+- **Config files**:
+  - `waf/nginx.conf` – nginx reverse-proxy configuration (proxies to `meshcentral:4430`)
+  - `waf/modsecurity.conf` – ModSecurity engine settings and OWASP CRS include
+- **Volumes**:
+  - `waf-logs`: Persists nginx/ModSecurity logs; mounted read-only by CrowdSec for log analysis
 
 #### CrowdSec (Optional)
 - **Image**: `crowdsecurity/crowdsec:latest`
@@ -309,13 +330,29 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
   - Automated bouncer key generation for MeshCentral
   - Community-driven threat intelligence
   - Real-time IP reputation blocking
-  - Log analysis from Caddy
+  - Log analysis from WAF (`waf-logs` volume)
 - **Volumes**:
   - `crowdsec-config`: CrowdSec configuration
   - `crowdsec-data`: Threat intelligence database
-  - `caddy-data`: Mounted read-only for log analysis
+  - `waf-logs`: Mounted read-only for WAF log analysis
 
 ### Network Architecture
+
+Default stack — WAF (nginx + ModSecurity + OWASP CRS) as reverse proxy:
+
+```
+Internet
+    ↓
+[Cloudflared (optional)]
+    ↓
+[WAF – nginx + ModSecurity + OWASP CRS] ← meshcentral-frontend (bridge)
+    ↓                                          ↓ (logs – waf-logs volume)
+[MeshCentral] ←────────────────────────→ [CrowdSec (optional, sidecar)]
+    ↓
+[MongoDB] ← meshcentral-backend (internal)
+```
+
+Alternative — Caddy as reverse proxy (profile: `caddy`):
 
 ```
 Internet
@@ -499,8 +536,8 @@ docker compose logs -f
 # Watch specific service
 docker compose logs -f meshcentral
 
-# Watch Caddy access logs
-docker compose exec caddy tail -f /data/meshcentral-access.log
+# Watch WAF access logs
+docker compose exec waf tail -f /var/log/nginx/access.log
 ```
 
 ## 🔌 Cloudflare Tunnel Setup
@@ -519,13 +556,77 @@ docker compose exec caddy tail -f /data/meshcentral-access.log
 
 In the Cloudflare dashboard:
 - **Public hostname**: `mesh.example.com`
-- **Service**: `http://caddy:80` or `https://caddy:443`
-- **TLS verification**: Disable if using Caddy's self-signed cert internally
+- **Service**: `http://waf:80` (WAF is the default reverse proxy)
+- **TLS verification**: TLS is terminated by Cloudflare; the WAF receives plain HTTP internally
 
 ### 3. Start with Cloudflare Profile
 
 ```bash
 docker compose --profile cloudflare up -d
+```
+
+## 🛡️ WAF Setup (nginx + ModSecurity + OWASP CRS)
+
+The WAF service is the **default reverse proxy** for this stack. It sits in front of MeshCentral and inspects all HTTP(S) traffic using ModSecurity v3 with the OWASP Core Rule Set (CRS).
+
+**Traffic flow:**
+
+```
+cloudflared → waf (nginx + ModSecurity + OWASP CRS) → meshcentral
+```
+
+### Starting the Stack with WAF
+
+The WAF starts automatically with `docker compose up -d` — no extra profile flag required:
+
+```bash
+# Start default stack (MongoDB + MeshCentral + WAF)
+docker compose up -d
+
+# Add Cloudflare Tunnel
+docker compose --profile cloudflare up -d
+
+# Add CrowdSec sidecar
+docker compose --profile crowdsec up -d
+```
+
+### Configuration Files
+
+- **`waf/nginx.conf`** – nginx reverse-proxy config; proxies all traffic (including WebSocket) to `meshcentral:4430` after WAF inspection. Loaded as `/etc/nginx/conf.d/meshcentral.conf` inside the container.
+- **`waf/modsecurity.conf`** – ModSecurity engine settings and OWASP CRS include. Loaded at `/etc/nginx/modsecurity.conf` inside the container.
+
+### Tuning ModSecurity
+
+The engine starts in `DetectionOnly` mode (log only, no blocking). Once you have verified that legitimate traffic is not being flagged, switch to blocking mode by editing `waf/modsecurity.conf`:
+
+```
+# Change this line:
+SecRuleEngine DetectionOnly
+# To:
+SecRuleEngine On
+```
+
+Then restart the WAF container:
+
+```bash
+docker compose restart waf
+```
+
+### CrowdSec and WAF
+
+CrowdSec remains a sidecar and is not integrated directly into nginx. The `waf-logs` volume is already mounted into the CrowdSec container (read-only) so CrowdSec can analyse WAF access and audit logs automatically when the `crowdsec` profile is enabled.
+
+### Verifying WAF Operation
+
+```bash
+# Check WAF container status
+docker compose ps waf
+
+# View nginx access logs
+docker compose exec waf tail -f /var/log/nginx/access.log
+
+# View ModSecurity audit log
+docker compose exec waf tail -f /var/log/nginx/modsec_audit.log
 ```
 
 ## 🛡️ CrowdSec Integration Setup
