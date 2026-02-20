@@ -1,7 +1,26 @@
 FROM nginx:alpine
 
 # Install dependencies for ModSecurity and build tools
-RUN apk add --no-cache --update git gcc g++ make pcre-dev zlib-dev libxml2 libxml2-dev libxslt-dev linux-headers curl tzdata openssl-dev bash libcurl
+RUN apk add --no-cache --update \
+    git \
+    gcc \
+    g++ \
+    make \
+    pcre-dev \
+    zlib-dev \
+    libxml2-dev \
+    libxslt-dev \
+    linux-headers \
+    curl \
+    tzdata \
+    openssl-dev \
+    bash \
+    libcurl \
+    autoconf \
+    automake \
+    libtool \
+    cmake \
+    pkgconfig
 
 # Install ModSecurity v3
 RUN git clone --depth 1 https://github.com/SpiderLabs/ModSecurity /opt/ModSecurity && \
