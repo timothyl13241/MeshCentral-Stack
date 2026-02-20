@@ -114,7 +114,7 @@ services:
       - meshcentral-backend
       - meshcentral-frontend
     healthcheck:
-      test: ["CMD", "curl", "-f", "-k", "http://localhost:4430/"]
+      test: ["CMD", "curl", "-f", "-k", "http://127.0.0.1:4430/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -143,11 +143,10 @@ services:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
-    hostname: ${MESHCENTRAL_HOSTNAME}
     networks:
       - meshcentral-frontend
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:2019/config/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:2019/config/"]
       interval: 30s
       timeout: 10s
       retries: 3
