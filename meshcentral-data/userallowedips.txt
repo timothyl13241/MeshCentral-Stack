@@ -1,3 +1,2 @@
 # List of allowed user IPs
 127.0.0.1 # Loopback for health check
-0.0.0.0 # Default allow all
