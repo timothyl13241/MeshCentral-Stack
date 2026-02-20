@@ -68,7 +68,7 @@
         "MaxUserSessions": 10,
         "MaxAgentSessions": 50
       },
-      "UserAllowedIP": [],
+      "UserAllowedIP": "file:userallowedips.txt",
       "AgentAllowedIP": [],
       "LoginRateLimit": {
         "time": 10,
