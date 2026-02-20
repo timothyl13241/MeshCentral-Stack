@@ -1,6 +1,6 @@
 {
 	# Global options
-	admin 0.0.0.0:2019
+	admin 127.0.0.1:2019
 	
 	# Email for ACME (Let's Encrypt)
 	email {$ACME_EMAIL}
@@ -16,6 +16,12 @@
 		}
 		format json
 	}
+}
+
+# Internal SNI for cloudflared handshake
+caddy {
+    tls internal
+    respond "internal SNI matched"
 }
 
 # MeshCentral site configuration
