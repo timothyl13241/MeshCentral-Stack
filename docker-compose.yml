@@ -108,6 +108,8 @@ services:
       - meshcentral-web:/opt/meshcentral/meshcentral-web
       # Rendered config - must be generated using render-config.sh before starting
       - ./meshcentral-data/config.json:/opt/meshcentral/meshcentral-data/config.json:ro
+      # User allowed IP setting
+      - ./meshcentral-data/userallowedips.txt:/opt/meshcentral/meshcentral-data/userallowedips.txt:ro
     networks:
       - meshcentral-backend
       - meshcentral-frontend
