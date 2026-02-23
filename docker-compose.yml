@@ -36,7 +36,9 @@ services:
     environment:
       # CrowdSec collections to install
       # crowdsecurity/traefik parses Traefik JSON access logs
-      COLLECTIONS: "crowdsecurity/http-cve crowdsecurity/whitelist-good-actors crowdsecurity/iptables crowdsecurity/linux crowdsecurity/traefik"
+      # crowdsecurity/appsec-virtual-patching and crowdsecurity/appsec-generic-rules
+      # enable the AppSec component (WAF-style request inspection via port 7422)
+      COLLECTIONS: "crowdsecurity/http-cve crowdsecurity/whitelist-good-actors crowdsecurity/iptables crowdsecurity/linux crowdsecurity/traefik crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules"
       # Enable metrics
       METRICS_ENABLED: "true"
     volumes:

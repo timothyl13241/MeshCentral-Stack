@@ -1,0 +1,15 @@
+# CrowdSec AppSec Component acquisition
+# Starts an HTTP listener on port 7422 that accepts WAF-style inspection requests
+# forwarded by the Traefik crowdsec-bouncer plugin.
+# Requires the crowdsecurity/appsec-virtual-patching and
+# crowdsecurity/appsec-generic-rules collections (added to COLLECTIONS in
+# docker-compose.yml).
+source: appsec
+listen_addr: 0.0.0.0:7422
+# appsec_config references the AppSec config installed by the
+# crowdsecurity/appsec-virtual-patching collection; it provides virtual patching
+# rules that block requests targeting known CVEs.
+appsec_config: crowdsecurity/virtual-patching
+name: myAppSecComponent
+labels:
+  type: appsec

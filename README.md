@@ -24,7 +24,7 @@ A secure, production-ready Docker Compose stack for [MeshCentral](https://meshce
 - **Password Policies**: Enforced strong password requirements
 - **Rate Limiting**: Built-in login rate limiting and invalid login tracking
 - **Secrets Management**: Secure environment-based configuration with no hardcoded credentials
-- **CrowdSec Integration**: Automated threat intelligence and IP reputation-based blocking via Traefik plugin and MeshCentral bouncer (Optional)
+- **CrowdSec Integration**: Automated threat intelligence and IP reputation-based blocking via Traefik plugin, AppSec WAF-style request inspection, and MeshCentral bouncer (Optional)
 
 ## 📋 Prerequisites
 
@@ -770,6 +770,7 @@ Cloudflare (edge) ──HTTPS──► Traefik (Origin Cert, port 443) ──HTT
 **CrowdSec integration:**
 - Traefik writes **JSON access logs** to the `traefik-logs` volume — parsed by CrowdSec using the `crowdsecurity/traefik` collection
 - The **CrowdSec bouncer Traefik plugin** (`crowdsec-bouncer-traefik-plugin`) applies LAPI decisions as a middleware, blocking flagged IPs at the Traefik edge
+- The **CrowdSec AppSec component** listens on port 7422; the Traefik plugin forwards each request for WAF-style inspection using the `crowdsecurity/appsec-virtual-patching` and `crowdsecurity/appsec-generic-rules` collections
 - The **MeshCentral CrowdSec bouncer** remains active for defence-in-depth
 
 > **⚠️ Port conflict**: Do **not** run both `traefik` and `waf` profiles at the same time using the same host ports (default `80`/`443`).  
@@ -891,6 +892,7 @@ CrowdSec is an open-source security engine that analyzes visitor behavior and cr
 - **Persistent Configuration**: API key is stored securely with Docker volumes
 - **Flexible Integration**: Works with or without automation
 - **Threat Intelligence**: Blocks known malicious IPs based on community-driven threat intelligence
+- **AppSec (WAF)**: The CrowdSec AppSec component performs real-time HTTP request inspection using the `crowdsecurity/appsec-virtual-patching` and `crowdsecurity/appsec-generic-rules` rulesets, providing protection against known CVEs and generic web attacks without requiring a separate WAF service
 
 ### Quick Start (Automated)
 
@@ -986,6 +988,9 @@ docker exec meshcentral-crowdsec cscli decisions list
 
 # Monitor CrowdSec alerts
 docker compose logs -f crowdsec
+
+# Verify the AppSec component is listening on port 7422
+docker exec meshcentral-crowdsec cscli appsec-configs list
 ```
 
 ### Configuration Options
@@ -1063,6 +1068,20 @@ docker exec meshcentral-app ping crowdsec
 
 # Verify CrowdSec LAPI is running
 docker exec meshcentral-crowdsec cscli lapi status
+```
+
+#### AppSec Component Not Working
+
+```bash
+# Confirm the AppSec collections are installed
+docker exec meshcentral-crowdsec cscli appsec-configs list
+docker exec meshcentral-crowdsec cscli appsec-rules list
+
+# Check CrowdSec logs for AppSec errors
+docker compose logs crowdsec | grep -i appsec
+
+# Verify the Traefik plugin can reach the AppSec listener
+docker exec meshcentral-traefik wget --spider -q http://crowdsec:7422 && echo "AppSec listener reachable" || echo "AppSec listener unreachable"
 ```
 
 ### Disabling CrowdSec
