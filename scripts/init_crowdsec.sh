@@ -50,49 +50,63 @@ if docker exec "$CROWDSEC_CONTAINER" cscli bouncers list -o json 2>/dev/null | g
     echo -e "  docker exec $CROWDSEC_CONTAINER cscli bouncers delete $BOUNCER_NAME"
 else
     echo -e "${YELLOW}Creating new bouncer '$BOUNCER_NAME'...${NC}"
-    API_KEY=$(docker exec "$CROWDSEC_CONTAINER" cscli bouncers add "$BOUNCER_NAME" -o raw 2>/dev/null)
+    API_KEY=$(docker exec "$CROWDSEC_CONTAINER" cscli bouncers add "$BOUNCER_NAME" -o raw 2>/dev/null) || true
     
     if [ -z "$API_KEY" ]; then
         echo -e "${RED}ERROR: Failed to generate bouncer API key${NC}"
-        exit 1
-    fi
+        echo -e "${YELLOW}Continuing to Traefik bouncer setup...${NC}"
+    else
+        echo -e "${GREEN}✓ Bouncer created successfully${NC}"
+        echo -e "${GREEN}API Key: ${API_KEY}${NC}"
     
-    echo -e "${GREEN}✓ Bouncer created successfully${NC}"
-    echo -e "${GREEN}API Key: ${API_KEY}${NC}"
-    
-    # Update config.json if it exists and has the crowdsec section
-    if [ -f "$CONFIG_FILE" ]; then
-        echo -e "${YELLOW}Updating config.json...${NC}"
-        
-        # Check if jq is available
-        if command -v jq >/dev/null 2>&1; then
-            # Create backup
-            cp "$CONFIG_FILE" "${CONFIG_FILE}.backup"
+        # Update config.json if it exists and has the crowdsec section
+        if [ -f "$CONFIG_FILE" ]; then
+            echo -e "${YELLOW}Updating config.json...${NC}"
             
-            # Update the API key in the crowdsec section, preserving other settings
-            # Use *= to merge instead of = to overwrite
-            jq --arg url "$CROWDSEC_LAPI_URL" \
-               --arg key "$API_KEY" \
-               '.settings.crowdsec = (
-                   .settings.crowdsec // {} | 
-                   . * {
-                       "url": $url,
-                       "apiKey": $key,
-                       "fallbackRemediation": (.fallbackRemediation // "bypass")
-                   }
-               )' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp"
-            
-            if jq empty "${CONFIG_FILE}.tmp" 2>/dev/null; then
-                mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
-                echo -e "${GREEN}✓ Config updated successfully${NC}"
+            # Check if jq is available
+            if command -v jq >/dev/null 2>&1; then
+                # Create backup
+                cp "$CONFIG_FILE" "${CONFIG_FILE}.backup"
+                
+                # Update the API key in the crowdsec section, preserving other settings
+                # Use *= to merge instead of = to overwrite
+                jq --arg url "$CROWDSEC_LAPI_URL" \
+                   --arg key "$API_KEY" \
+                   '.settings.crowdsec = (
+                       .settings.crowdsec // {} | 
+                       . * {
+                           "url": $url,
+                           "apiKey": $key,
+                           "fallbackRemediation": (.fallbackRemediation // "bypass")
+                       }
+                   )' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp"
+                
+                if jq empty "${CONFIG_FILE}.tmp" 2>/dev/null; then
+                    mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+                    echo -e "${GREEN}✓ Config updated successfully${NC}"
+                else
+                    echo -e "${RED}ERROR: Generated invalid JSON, restoring backup${NC}"
+                    mv "${CONFIG_FILE}.backup" "$CONFIG_FILE"
+                fi
             else
-                echo -e "${RED}ERROR: Generated invalid JSON, restoring backup${NC}"
-                mv "${CONFIG_FILE}.backup" "$CONFIG_FILE"
+                echo -e "${YELLOW}⚠ jq not available - manual configuration required${NC}"
+                echo ""
+                echo "Add this to your $CONFIG_FILE under settings:"
+                echo ""
+                cat <<EOFCFG
+"crowdsec": {
+  "url": "$CROWDSEC_LAPI_URL",
+  "apiKey": "$API_KEY",
+  "fallbackRemediation": "bypass"
+}
+EOFCFG
+                echo ""
             fi
         else
-            echo -e "${YELLOW}⚠ jq not available - manual configuration required${NC}"
+            echo -e "${YELLOW}⚠ Config file not found at $CONFIG_FILE${NC}"
+            echo -e "${YELLOW}Manual configuration required${NC}"
             echo ""
-            echo "Add this to your $CONFIG_FILE under settings:"
+            echo "Add this to your MeshCentral config.json under settings:"
             echo ""
             cat <<EOFCFG
 "crowdsec": {
@@ -103,20 +117,6 @@ else
 EOFCFG
             echo ""
         fi
-    else
-        echo -e "${YELLOW}⚠ Config file not found at $CONFIG_FILE${NC}"
-        echo -e "${YELLOW}Manual configuration required${NC}"
-        echo ""
-        echo "Add this to your MeshCentral config.json under settings:"
-        echo ""
-        cat <<EOFCFG
-"crowdsec": {
-  "url": "$CROWDSEC_LAPI_URL",
-  "apiKey": "$API_KEY",
-  "fallbackRemediation": "bypass"
-}
-EOFCFG
-        echo ""
     fi
 fi
 

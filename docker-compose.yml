@@ -74,7 +74,7 @@ services:
       - ./scripts/init_crowdsec.sh:/init_crowdsec.sh:ro
       - ./meshcentral-data:/meshcentral-data
       # Traefik dynamic config dir – init script injects the Traefik bouncer API key
-      - ./traefik/dynamic:/traefik-dynamic
+      - ./traefik/dynamic:/traefik/dynamic
     environment:
       CROWDSEC_CONTAINER: ${CROWDSEC_CONTAINER:-meshcentral-crowdsec}
       CROWDSEC_BOUNCER_NAME: ${CROWDSEC_BOUNCER_NAME:-meshcentral}
