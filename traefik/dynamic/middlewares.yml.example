@@ -25,3 +25,31 @@ http:
         scheme: https
         permanent: true
 
+    # Traefik dashboard BasicAuth (optional – Cloudflare Access is the primary control).
+    # Uncomment and fill in to add a second auth layer in front of the dashboard.
+    # Generate an htpasswd entry (requires apache2-utils / httpd-tools):
+    #   echo $(htpasswd -nb <user> <password>) | sed -e 's/\$/\$\$/g'
+    # IMPORTANT: every $ in the htpasswd output must be doubled ($$) in this file.
+    #
+    # dashboard-auth:
+    #   basicAuth:
+    #     users:
+    #       - "admin:$$apr1$$example$$hashedpasswordhere"
+
+  routers:
+    # Traefik dashboard router.
+    # The Cloudflare Tunnel routes a second public hostname (TRAEFIK_DASHBOARD_HOSTNAME)
+    # to https://traefik:443; Traefik matches it here and serves the dashboard UI.
+    # The Origin Certificate (traefik/dynamic/tls.yml) provides the TLS for this route.
+    # Protect this route with a Cloudflare Access policy (recommended) and/or
+    # uncomment the dashboard-auth middleware above for BasicAuth.
+    traefik-dashboard:
+      rule: "Host(`${TRAEFIK_DASHBOARD_HOSTNAME}`)"
+      entryPoints:
+        - websecure
+      service: api@internal
+      tls: {}
+      middlewares:
+        - crowdsec@file
+        # - dashboard-auth@file  # Uncomment to enable BasicAuth (configure above first)
+

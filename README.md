@@ -618,8 +618,9 @@ docker compose exec waf tail -f /var/log/nginx/access.log
 In the Cloudflare dashboard:
 - **Public hostname**: `mesh.example.com`
 - **Service (WAF default)**: `http://waf:80`
-- **Service (Traefik profile)**: `http://traefik:80`
-- **TLS verification**: TLS is terminated by Cloudflare; the proxy receives plain HTTP internally
+- **Service (Traefik profile)**: `https://traefik:443` (uses Origin Certificate; set SSL/TLS to Full/Strict)
+- **TLS verification (WAF)**: TLS is terminated by Cloudflare; the WAF receives plain HTTP internally
+- **TLS verification (Traefik)**: Cloudflare verifies the Origin Certificate on Traefik (Full/Strict)
 
 ### 3. Start with Cloudflare Profile
 
@@ -752,13 +753,19 @@ docker compose exec waf tail -f /var/log/nginx/modsec_audit.log
 
 ## 🚦 Traefik Reverse Proxy Setup
 
-Traefik is an optional reverse proxy that can be used **instead of the WAF** when you want Docker label-based service discovery, built-in Let's Encrypt support, and native CrowdSec integration via the [crowdsec-bouncer-traefik-plugin](https://github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin).
+Traefik is an optional reverse proxy that can be used **instead of the WAF** when you want Docker label-based service discovery, native CrowdSec bouncer plugin integration, and end-to-end HTTPS using a Cloudflare Origin Certificate.
 
-**Traffic flow:**
+**Traffic flow (with Origin Certificate):**
 
 ```
-Cloudflare Tunnel → Traefik → MeshCentral
+Cloudflare (edge) ──HTTPS──► Traefik (Origin Cert, port 443) ──HTTP──► MeshCentral (TlsOffload, port 4430)
+                                     ↕ CrowdSec LAPI
+                        (Traefik bouncer plugin + MeshCentral bouncer)
 ```
+
+- Cloudflare Tunnel connects to Traefik on **port 443 using HTTPS** (Full/Strict SSL mode)
+- Traefik presents the **Cloudflare Origin Certificate** — Cloudflare verifies it
+- Traefik proxies to MeshCentral on **port 4430 via HTTP**; MeshCentral uses `TlsOffload` to recognise connections from the frontend subnet as already TLS-terminated and serves the correct HTTPS URLs to clients
 
 **CrowdSec integration:**
 - Traefik writes **JSON access logs** to the `traefik-logs` volume — parsed by CrowdSec using the `crowdsecurity/traefik` collection
@@ -768,77 +775,95 @@ Cloudflare Tunnel → Traefik → MeshCentral
 > **⚠️ Port conflict**: Do **not** run both `traefik` and `waf` profiles at the same time using the same host ports (default `80`/`443`).  
 > Set `TRAEFIK_HTTP_PORT` / `TRAEFIK_HTTPS_PORT` to different values in `.env` if you need both running simultaneously.
 
-### Quick Start
+### 1. Obtain a Cloudflare Origin Certificate
+
+The Origin Certificate lets Cloudflare verify the origin (Traefik) and enables **Full (Strict)** SSL mode.
+
+1. Open the Cloudflare Dashboard → your domain → **SSL/TLS** → **Origin Server**
+2. Click **Create Certificate** (choose RSA or ECDSA, set validity as per Cloudflare's current policy)
+3. Save the certificate text as **`traefik/ssl/origin-cert.pem`**
+4. Save the private key text as **`traefik/ssl/origin-key.pem`**
+5. In Cloudflare **SSL/TLS Overview**, set the encryption mode to **Full (Strict)**
+
+Both files are already covered by `.gitignore` (`*.pem` / `*.key`) and will never be committed.
+
+### 2. Configure Environment Variables
+
+In your `.env` file, set:
 
 ```bash
-# 1. Render configs (creates traefik/dynamic/middlewares.yml from the example template)
-./render-config.sh
+# Your MeshCentral hostname (e.g. mesh.example.com)
+MESHCENTRAL_HOSTNAME=mesh.example.com
 
-# 2. Start the stack with Traefik + CrowdSec + Cloudflare Tunnel
+# Hostname for the Traefik dashboard (separate Cloudflare Tunnel public hostname)
+TRAEFIK_DASHBOARD_HOSTNAME=traefik.example.com
+```
+
+### 3. Render Configuration
+
+```bash
+./render-config.sh
+```
+
+This creates `traefik/dynamic/middlewares.yml` from the example template, substituting both `TRAEFIK_DASHBOARD_HOSTNAME` and (when set) `TRAEFIK_CROWDSEC_BOUNCER_KEY`. The script also warns if the Origin Certificate files are missing.
+
+### 4. Quick Start
+
+```bash
+# Start the stack with Traefik + CrowdSec + Cloudflare Tunnel
 docker compose --profile traefik --profile crowdsec --profile cloudflare up -d
 
-# 3. Run the init container to create both the MeshCentral and Traefik CrowdSec bouncers
+# Run the one-time init container to register both CrowdSec bouncers
 docker compose --profile crowdsec-init run --rm crowdsec-init
 
-# Traefik picks up the updated middlewares.yml automatically (file-watcher hot-reload).
-# Restart MeshCentral to apply the MeshCentral bouncer key:
+# Traefik hot-reloads middlewares.yml automatically (file-provider watcher).
+# Restart MeshCentral to apply its bouncer key:
 docker compose restart meshcentral
 ```
 
-### Architecture
+### 5. Cloudflare Tunnel Configuration
+
+Configure **two** public hostnames in the Cloudflare Zero Trust Tunnel settings:
+
+| Public hostname | Service URL | Purpose |
+|---|---|---|
+| `mesh.example.com` | `https://traefik:443` | MeshCentral application |
+| `traefik.example.com` | `https://traefik:443` | Traefik dashboard |
+
+Both hostnames route to `https://traefik:443`. Traefik differentiates them by `Host` header.
+
+> **Recommended**: Create a **Cloudflare Access policy** on `traefik.example.com` to restrict dashboard access to authorised users only.
+
+### Architecture files
 
 | File | Purpose |
 |---|---|
-| `traefik/traefik.yml` | Traefik static config: entrypoints (80/443/8082), Docker/file providers, access log, CrowdSec plugin declaration |
-| `traefik/dynamic/middlewares.yml.example` | Template for the dynamic CrowdSec middleware config (tracked in git) |
-| `traefik/dynamic/middlewares.yml` | Rendered dynamic config with CrowdSec bouncer API key (git-ignored, created by `render-config.sh`) |
+| `traefik/traefik.yml` | Static config: entrypoints (80/443/8082), Docker/file providers, access log, CrowdSec plugin |
+| `traefik/dynamic/tls.yml` | TLS store: sets the Cloudflare Origin Certificate as the default cert for `websecure` |
+| `traefik/dynamic/middlewares.yml.example` | Template for CrowdSec bouncer middleware + dashboard router (tracked in git) |
+| `traefik/dynamic/middlewares.yml` | Rendered dynamic config (git-ignored; created by `render-config.sh`) |
+| `traefik/ssl/origin-cert.pem` | Cloudflare Origin Certificate (git-ignored; place manually) |
+| `traefik/ssl/origin-key.pem` | Cloudflare Origin Certificate private key (git-ignored; place manually) |
 | `crowdsec/acquis.d/traefik.yaml` | CrowdSec log acquisition rule for Traefik JSON access logs |
-
-### Cloudflare Tunnel Configuration for Traefik
-
-In the Cloudflare Zero Trust dashboard, set the tunnel public hostname service to:
-
-```
-http://traefik:80
-```
-
-TLS is terminated by Cloudflare; Traefik receives plain HTTP internally and routes traffic to MeshCentral on port 4430.
-
-### Configuring the Cloudflare Tunnel service endpoint
-
-- **Service**: `http://traefik:80` (when using Traefik profile)
-- **Service**: `http://waf:80` (when using the default WAF)
 
 ### MeshCentral Traefik Labels
 
 MeshCentral is pre-configured with Traefik labels in `docker-compose.yml`:
 
-- Routes `MESHCENTRAL_HOSTNAME` on port 443 (HTTPS) and port 80 (HTTP → HTTPS redirect)
-- Applies the `crowdsec@file` middleware (CrowdSec bouncer) to all routes
-- Proxies to MeshCentral on port 4430
+- Routes `MESHCENTRAL_HOSTNAME` on port 443 (HTTPS, `websecure` entrypoint) with the `crowdsec@file` middleware
+- Routes `MESHCENTRAL_HOSTNAME` on port 80 (HTTP → HTTPS redirect + CrowdSec)
+- Proxies to MeshCentral on port 4430 (HTTP, TlsOffload subnet)
 
 Labels are only active when Traefik is running (controlled by `traefik.enable=true` and `exposedByDefault: false` in `traefik/traefik.yml`).
 
-### TLS with Traefik
+### Dashboard Access
 
-By default, Traefik uses a self-signed certificate on port 443. For a proper certificate, add an ACME (Let's Encrypt) configuration to `traefik/traefik.yml`:
+The Traefik dashboard is exposed via the `traefik-dashboard` router defined in `traefik/dynamic/middlewares.yml`. It is:
 
-```yaml
-certificatesResolvers:
-  cloudflare:
-    acme:
-      email: your@email.com
-      storage: /etc/traefik/acme.json
-      dnsChallenge:
-        provider: cloudflare
-```
-
-And set environment variables in the `traefik` service in `docker-compose.yml`:
-
-```yaml
-environment:
-  CF_DNS_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
-```
+- Accessible at `https://TRAEFIK_DASHBOARD_HOSTNAME` via the Cloudflare Tunnel
+- Protected by the `crowdsec@file` middleware (blocks flagged IPs)
+- Optionally protected by BasicAuth — see the `dashboard-auth` middleware comments in `middlewares.yml.example`
+- **Recommended**: protect with a Cloudflare Access policy (Zero Trust)
 
 ### Verifying Traefik Operation
 
@@ -849,7 +874,10 @@ docker compose ps traefik
 # View Traefik access logs (parsed by CrowdSec)
 docker compose exec traefik tail -f /var/log/traefik/access.log
 
-# Check active Traefik routers/services via API
+# Check TLS certificate is loaded
+openssl s_client -connect localhost:443 -servername mesh.example.com </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer
+
+# Check active Traefik routers/services via internal API
 docker compose exec traefik wget -qO- http://localhost:8082/api/rawdata | jq .
 ```
 

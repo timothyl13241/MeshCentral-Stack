@@ -1,5 +1,11 @@
 # Traefik v3 static configuration
-# Traffic flow: Cloudflare Tunnel → Traefik → MeshCentral
+# Traffic flow: Cloudflare Tunnel → Traefik (Origin Cert, HTTPS) → MeshCentral
+#
+# TLS (end-to-end SSL):
+#   - Cloudflare Origin Certificate is loaded via dynamic/tls.yml (defaultCertificate).
+#   - Cloudflare Tunnel connects to Traefik on port 443 using HTTPS (Full/Strict mode).
+#   - Traefik proxies to MeshCentral on port 4430; MeshCentral uses TlsOffload to
+#     recognise connections from the frontend subnet as already TLS-terminated.
 #
 # CrowdSec integration:
 #   - JSON access log is written to /var/log/traefik/access.log (parsed by CrowdSec)
@@ -8,7 +14,11 @@
 # Run with: docker compose --profile traefik up -d
 
 api:
-  dashboard: false
+  # Enable the dashboard UI.
+  # The dashboard is exposed via the router defined in dynamic/middlewares.yml
+  # (matched on TRAEFIK_DASHBOARD_HOSTNAME) so it is reachable through the
+  # Cloudflare Tunnel on its own public hostname without opening an extra port.
+  dashboard: true
 
 # Health-check endpoint served on the dedicated internal entrypoint (port 8082)
 ping:

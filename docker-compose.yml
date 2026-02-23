@@ -185,7 +185,12 @@ services:
 
   # Traefik Reverse Proxy (Optional – use instead of waf when Traefik-native routing,
   # Docker label-based service discovery, and the CrowdSec bouncer plugin are preferred)
-  # Traffic flow: Cloudflare Tunnel → Traefik → MeshCentral
+  # Traffic flow: Cloudflare Tunnel → Traefik (Origin Cert, HTTPS/443) → MeshCentral
+  # TLS:
+  #   - Cloudflare Origin Certificate is mounted at /etc/traefik/ssl/ (traefik/ssl/)
+  #   - dynamic/tls.yml sets it as the default cert for the websecure (443) entrypoint
+  #   - Cloudflare Tunnel service URL: https://traefik:443 (Full/Strict SSL mode)
+  #   - Traefik → MeshCentral: HTTP on 4430 (TlsOffload recognises frontend subnet)
   # CrowdSec integration:
   #   - Traefik writes JSON access logs consumed by CrowdSec (crowdsecurity/traefik)
   #   - CrowdSec bouncer plugin middleware blocks flagged IPs at the Traefik layer
@@ -207,9 +212,13 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Traefik static configuration
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
-      # Dynamic configuration directory (CrowdSec middleware, HTTP→HTTPS redirect)
+      # Dynamic configuration directory (TLS store, CrowdSec middleware, HTTP→HTTPS redirect)
       # Watched by Traefik for live reloads; crowdsec-init writes the bouncer key here
       - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      # Cloudflare Origin Certificate – enables Full (Strict) SSL from Cloudflare Tunnel.
+      # Place origin-cert.pem and origin-key.pem in traefik/ssl/ before starting.
+      # See traefik/ssl/README.md for instructions.
+      - ./traefik/ssl:/etc/traefik/ssl:ro
       # Persist access logs; CrowdSec mounts this volume for Traefik log analysis
       - traefik-logs:/var/log/traefik
     networks:
