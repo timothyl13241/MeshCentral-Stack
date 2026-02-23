@@ -182,6 +182,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+    profiles:
+      - waf # Only start when explicitly enabled
 
   # Traefik Reverse Proxy (Optional – use instead of waf when Traefik-native routing,
   # Docker label-based service discovery, and the CrowdSec bouncer plugin are preferred)
