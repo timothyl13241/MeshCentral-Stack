@@ -292,12 +292,14 @@ services:
 
 networks:
   meshcentral-frontend:
+    name: meshcentral-frontend
     driver: bridge
     internal: false
     ipam:
       config:
         - subnet: 172.19.0.0/16
   meshcentral-backend:
+    name: meshcentral-backend
     driver: bridge
     internal: true
 
