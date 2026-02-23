@@ -35,15 +35,20 @@ services:
     restart: unless-stopped
     environment:
       # CrowdSec collections to install
-      COLLECTIONS: "crowdsecurity/http-cve crowdsecurity/whitelist-good-actors crowdsecurity/iptables crowdsecurity/linux"
+      # crowdsecurity/traefik parses Traefik JSON access logs
+      COLLECTIONS: "crowdsecurity/http-cve crowdsecurity/whitelist-good-actors crowdsecurity/iptables crowdsecurity/linux crowdsecurity/traefik"
       # Enable metrics
       METRICS_ENABLED: "true"
     volumes:
       # CrowdSec configuration and database
       - crowdsec-config:/etc/crowdsec
       - crowdsec-data:/var/lib/crowdsec/data
-      # Mount WAF logs for analysis
+      # Mount Traefik access logs for analysis (crowdsecurity/traefik collection)
+      - traefik-logs:/var/log/traefik:ro
+      # Mount WAF logs for analysis (when using the waf profile)
       - waf-logs:/var/log/nginx:ro
+      # Custom log acquisition rules (adds Traefik log source)
+      - ./crowdsec/acquis.d:/etc/crowdsec/acquis.d:ro
     networks:
       - meshcentral-backend
       - meshcentral-frontend
@@ -67,6 +72,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./scripts/init_crowdsec.sh:/init_crowdsec.sh:ro
       - ./meshcentral-data:/meshcentral-data
+      # Traefik dynamic config dir – init script injects the Traefik bouncer API key
+      - ./traefik/dynamic:/traefik-dynamic
     environment:
       CROWDSEC_CONTAINER: ${CROWDSEC_CONTAINER:-meshcentral-crowdsec}
       CROWDSEC_BOUNCER_NAME: ${CROWDSEC_BOUNCER_NAME:-meshcentral}
@@ -110,6 +117,19 @@ services:
       - ./meshcentral-data/config.json:/opt/meshcentral/meshcentral-data/config.json:ro
       # User allowed IP setting - uncomment to restrict to IPs in userallowedips.txt file
       # - ./meshcentral-data/userallowedips.txt:/opt/meshcentral/meshcentral-data/userallowedips.txt:ro
+    labels:
+      # Traefik routing labels (only used when the traefik profile is active)
+      - "traefik.enable=true"
+      # HTTPS router – main traffic via CrowdSec bouncer middleware
+      - "traefik.http.routers.meshcentral.rule=Host(`${MESHCENTRAL_HOSTNAME}`)"
+      - "traefik.http.routers.meshcentral.entrypoints=websecure"
+      - "traefik.http.routers.meshcentral.tls=true"
+      - "traefik.http.routers.meshcentral.middlewares=crowdsec@file"
+      - "traefik.http.services.meshcentral.loadbalancer.server.port=4430"
+      # HTTP router – redirect to HTTPS, also gated by CrowdSec
+      - "traefik.http.routers.meshcentral-http.rule=Host(`${MESHCENTRAL_HOSTNAME}`)"
+      - "traefik.http.routers.meshcentral-http.entrypoints=web"
+      - "traefik.http.routers.meshcentral-http.middlewares=redirect-to-https@file,crowdsec@file"
     networks:
       - meshcentral-backend
       - meshcentral-frontend
@@ -163,6 +183,55 @@ services:
       retries: 3
       start_period: 15s
 
+  # Traefik Reverse Proxy (Optional – use instead of waf when Traefik-native routing,
+  # Docker label-based service discovery, and the CrowdSec bouncer plugin are preferred)
+  # Traffic flow: Cloudflare Tunnel → Traefik (Origin Cert, HTTPS/443) → MeshCentral
+  # TLS:
+  #   - Cloudflare Origin Certificate is mounted at /etc/traefik/ssl/ (traefik/ssl/)
+  #   - dynamic/tls.yml sets it as the default cert for the websecure (443) entrypoint
+  #   - Cloudflare Tunnel service URL: https://traefik:443 (Full/Strict SSL mode)
+  #   - Traefik → MeshCentral: HTTP on 4430 (TlsOffload recognises frontend subnet)
+  # CrowdSec integration:
+  #   - Traefik writes JSON access logs consumed by CrowdSec (crowdsecurity/traefik)
+  #   - CrowdSec bouncer plugin middleware blocks flagged IPs at the Traefik layer
+  #   - MeshCentral bouncer also remains active for defence-in-depth
+  # NOTE: Do not run both traefik and waf at the same time on the same host ports.
+  #       Change TRAEFIK_HTTP_PORT / TRAEFIK_HTTPS_PORT in .env if needed.
+  traefik:
+    image: traefik:v3
+    container_name: meshcentral-traefik
+    restart: unless-stopped
+    depends_on:
+      meshcentral:
+        condition: service_healthy
+    ports:
+      - "${TRAEFIK_HTTP_PORT:-80}:80"
+      - "${TRAEFIK_HTTPS_PORT:-443}:443"
+    volumes:
+      # Docker socket – read-only, for container label discovery
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Traefik static configuration
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      # Dynamic configuration directory (TLS store, CrowdSec middleware, HTTP→HTTPS redirect)
+      # Watched by Traefik for live reloads; crowdsec-init writes the bouncer key here
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      # Cloudflare Origin Certificate – enables Full (Strict) SSL from Cloudflare Tunnel.
+      # Place origin-cert.pem and origin-key.pem in traefik/ssl/ before starting.
+      # See traefik/ssl/README.md for instructions.
+      - ./traefik/ssl:/etc/traefik/ssl:ro
+      # Persist access logs; CrowdSec mounts this volume for Traefik log analysis
+      - traefik-logs:/var/log/traefik
+    networks:
+      - meshcentral-frontend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8082/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    profiles:
+      - traefik  # Only start when explicitly enabled
+
   # Caddy Reverse Proxy (Optional – use instead of waf when automatic HTTPS via
   # Let's Encrypt / Cloudflare DNS challenge is preferred over nginx+ModSecurity)
   caddy:
@@ -206,6 +275,10 @@ services:
     depends_on:
       waf:
         condition: service_healthy
+        required: false  # Not required when using the traefik profile instead
+      traefik:
+        condition: service_healthy
+        required: false  # Not required when using the waf profile instead
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
     networks:
       - meshcentral-frontend
@@ -245,4 +318,6 @@ volumes:
   crowdsec-data:
     driver: local
   waf-logs:
+    driver: local
+  traefik-logs:
     driver: local

@@ -96,6 +96,41 @@ else
     echo -e "${YELLOW}Note: Install 'jq' for JSON validation${NC}"
 fi
 
+# ------------------------------------------------------------------
+# Traefik dynamic middleware config
+# ------------------------------------------------------------------
+TRAEFIK_EXAMPLE="${SCRIPT_DIR}/traefik/dynamic/middlewares.yml.example"
+TRAEFIK_OUTPUT="${SCRIPT_DIR}/traefik/dynamic/middlewares.yml"
+
+if [ -f "$TRAEFIK_EXAMPLE" ]; then
+    # Substitute TRAEFIK_CROWDSEC_BOUNCER_KEY and TRAEFIK_DASHBOARD_HOSTNAME
+    export TRAEFIK_CROWDSEC_BOUNCER_KEY="${TRAEFIK_CROWDSEC_BOUNCER_KEY:-}"
+    export TRAEFIK_DASHBOARD_HOSTNAME="${TRAEFIK_DASHBOARD_HOSTNAME:-}"
+
+    if [ -f "$TRAEFIK_OUTPUT" ] && [ -z "${TRAEFIK_CROWDSEC_BOUNCER_KEY}" ] && [ -z "${TRAEFIK_DASHBOARD_HOSTNAME}" ]; then
+        # Avoid overwriting a key that may have been injected by the crowdsec-init container
+        echo -e "${GREEN}✓ Traefik middleware config already exists (skipping re-render)${NC}"
+        echo -e "${YELLOW}  Set TRAEFIK_CROWDSEC_BOUNCER_KEY and/or TRAEFIK_DASHBOARD_HOSTNAME in .env and re-run to regenerate.${NC}"
+    else
+        envsubst '$TRAEFIK_CROWDSEC_BOUNCER_KEY $TRAEFIK_DASHBOARD_HOSTNAME' < "$TRAEFIK_EXAMPLE" > "$TRAEFIK_OUTPUT"
+        echo -e "${GREEN}✓ Traefik middleware config rendered: $TRAEFIK_OUTPUT${NC}"
+        if [ -z "${TRAEFIK_CROWDSEC_BOUNCER_KEY}" ]; then
+            echo -e "${YELLOW}  TRAEFIK_CROWDSEC_BOUNCER_KEY is empty – run the crowdsec-init profile to populate it.${NC}"
+        fi
+        if [ -z "${TRAEFIK_DASHBOARD_HOSTNAME}" ]; then
+            echo -e "${YELLOW}  TRAEFIK_DASHBOARD_HOSTNAME is empty – set it in .env and re-run render-config.sh.${NC}"
+        fi
+    fi
+
+    # Ensure the ssl/ directory exists for the Origin Certificate
+    TRAEFIK_SSL_DIR="${SCRIPT_DIR}/traefik/ssl"
+    if [ ! -f "${TRAEFIK_SSL_DIR}/origin-cert.pem" ] || [ ! -f "${TRAEFIK_SSL_DIR}/origin-key.pem" ]; then
+        echo -e "${YELLOW}  ⚠ Origin Certificate not found in traefik/ssl/.${NC}"
+        echo -e "${YELLOW}    Place origin-cert.pem and origin-key.pem there before starting Traefik.${NC}"
+        echo -e "${YELLOW}    See traefik/ssl/README.md for instructions.${NC}"
+    fi
+fi
+
 echo ""
 echo "=================================================="
 echo "Next steps:"

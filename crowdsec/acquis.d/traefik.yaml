@@ -1,0 +1,7 @@
+# CrowdSec log acquisition – Traefik access logs
+# Tells CrowdSec to tail the Traefik JSON access log and parse it with the
+# crowdsecurity/traefik collection parsers.
+filenames:
+  - /var/log/traefik/access.log
+labels:
+  type: traefik

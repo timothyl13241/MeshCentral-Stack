@@ -1,6 +1,9 @@
 #!/bin/sh
 # CrowdSec Bouncer Setup Script for MeshCentral
-# This runs as an init container to automatically configure the CrowdSec bouncer
+# This runs as an init container to automatically configure the CrowdSec bouncers:
+#   1. MeshCentral bouncer – API key injected into meshcentral-data/config.json
+#   2. Traefik bouncer    – API key injected into traefik/dynamic/middlewares.yml
+#                           (restart Traefik after this script completes)
 
 set -e
 
@@ -13,6 +16,8 @@ CROWDSEC_CONTAINER=${CROWDSEC_CONTAINER:-meshcentral-crowdsec}
 BOUNCER_NAME=${CROWDSEC_BOUNCER_NAME:-meshcentral}
 CROWDSEC_LAPI_URL=${CROWDSEC_LAPI_URL:-http://crowdsec:8080}
 CONFIG_FILE=/meshcentral-data/config.json
+TRAEFIK_BOUNCER_NAME="${BOUNCER_NAME}-traefik"
+TRAEFIK_MIDDLEWARES_FILE=/traefik/dynamic/middlewares.yml
 
 echo -e "${GREEN}=== MeshCentral CrowdSec Bouncer Setup ===${NC}"
 
@@ -116,3 +121,45 @@ EOFCFG
 fi
 
 echo -e "${GREEN}=== CrowdSec bouncer setup complete ===${NC}"
+
+# ============================================================
+# Traefik Bouncer Setup
+# ============================================================
+echo ""
+echo -e "${GREEN}=== Traefik CrowdSec Bouncer Setup ===${NC}"
+
+if docker exec "$CROWDSEC_CONTAINER" cscli bouncers list -o json 2>/dev/null | grep -q "\"name\":\"$TRAEFIK_BOUNCER_NAME\""; then
+    echo -e "${GREEN}✓ Traefik bouncer '$TRAEFIK_BOUNCER_NAME' already exists${NC}"
+    echo -e "${YELLOW}Skipping key generation (bouncer already registered)${NC}"
+    echo -e "${YELLOW}If you need to regenerate the key, delete the bouncer first:${NC}"
+    echo -e "  docker exec $CROWDSEC_CONTAINER cscli bouncers delete $TRAEFIK_BOUNCER_NAME"
+else
+    echo -e "${YELLOW}Creating new Traefik bouncer '$TRAEFIK_BOUNCER_NAME'...${NC}"
+    TRAEFIK_API_KEY=$(docker exec "$CROWDSEC_CONTAINER" cscli bouncers add "$TRAEFIK_BOUNCER_NAME" -o raw 2>/dev/null) || true
+
+    if [ -z "$TRAEFIK_API_KEY" ]; then
+        echo -e "${RED}ERROR: Failed to generate Traefik bouncer API key${NC}"
+    else
+        echo -e "${GREEN}✓ Traefik bouncer created successfully${NC}"
+        echo -e "${GREEN}API Key: ${TRAEFIK_API_KEY}${NC}"
+
+        # Inject the key into traefik/dynamic/middlewares.yml if it is mounted
+        if [ -f "$TRAEFIK_MIDDLEWARES_FILE" ]; then
+            echo -e "${YELLOW}Updating Traefik middleware config...${NC}"
+            # Replace the crowdsecLapiKey line regardless of current value
+            sed -i "s|crowdsecLapiKey:.*|crowdsecLapiKey: \"$TRAEFIK_API_KEY\"|" "$TRAEFIK_MIDDLEWARES_FILE"
+            echo -e "${GREEN}✓ Traefik middleware config updated${NC}"
+            echo -e "${YELLOW}Traefik will hot-reload the middleware config automatically.${NC}"
+            echo -e "${YELLOW}If the key does not take effect, restart Traefik:${NC}"
+            echo -e "  docker compose --profile traefik restart traefik"
+        else
+            echo -e "${YELLOW}⚠ Traefik middlewares file not found at $TRAEFIK_MIDDLEWARES_FILE${NC}"
+            echo -e "${YELLOW}Manually add the key to traefik/dynamic/middlewares.yml:${NC}"
+            echo ""
+            echo "  crowdsecLapiKey: \"$TRAEFIK_API_KEY\""
+            echo ""
+        fi
+    fi
+fi
+
+echo -e "${GREEN}=== Traefik bouncer setup complete ===${NC}"
