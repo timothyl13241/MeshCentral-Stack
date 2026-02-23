@@ -17,7 +17,7 @@ BOUNCER_NAME=${CROWDSEC_BOUNCER_NAME:-meshcentral}
 CROWDSEC_LAPI_URL=${CROWDSEC_LAPI_URL:-http://crowdsec:8080}
 CONFIG_FILE=/meshcentral-data/config.json
 TRAEFIK_BOUNCER_NAME="${BOUNCER_NAME}-traefik"
-TRAEFIK_MIDDLEWARES_FILE=/traefik-dynamic/middlewares.yml
+TRAEFIK_MIDDLEWARES_FILE=/traefik/dynamic/middlewares.yml
 
 echo -e "${GREEN}=== MeshCentral CrowdSec Bouncer Setup ===${NC}"
 
