@@ -7,9 +7,20 @@
 #   - Traefik proxies to MeshCentral on port 4430; MeshCentral uses TlsOffload to
 #     recognise connections from the frontend subnet as already TLS-terminated.
 #
+# IP forwarding (required for UserAllowedIP and CrowdSec):
+#   - Cloudflare Tunnel sends CF-Connecting-IP / X-Forwarded-For with the real client IP.
+#   - forwardedHeaders.trustedIPs on both entrypoints lists every Cloudflare proxy CIDR.
+#   - Traefik therefore passes the *real* client IP in X-Forwarded-For to MeshCentral.
+#   - MeshCentral trusts X-Forwarded-For from the TlsOffload subnet (172.19.0.0/16)
+#     and uses the real IP for UserAllowedIP enforcement and CrowdSec decisions.
+#
 # CrowdSec integration:
 #   - JSON access log is written to /var/log/traefik/access.log (parsed by CrowdSec)
 #   - crowdsec-bouncer plugin applies CrowdSec LAPI decisions as a middleware
+#
+# Metrics:
+#   - Prometheus metrics are exposed on the internal entrypoint (port 8082) at /metrics
+#   - Scrape with: http://<traefik-host>:8082/metrics
 #
 # Run with: docker compose --profile traefik up -d
 
@@ -43,9 +54,61 @@ accessLog:
 entryPoints:
   web:
     address: ":80"
+    forwardedHeaders:
+      # Trust Cloudflare proxy IPs so the real client IP is forwarded correctly.
+      # See: https://www.cloudflare.com/ips/
+      trustedIPs:
+        - "173.245.48.0/20"
+        - "103.21.244.0/22"
+        - "103.22.200.0/22"
+        - "103.31.4.0/22"
+        - "141.101.64.0/18"
+        - "108.162.192.0/18"
+        - "190.93.240.0/20"
+        - "188.114.96.0/20"
+        - "197.234.240.0/22"
+        - "198.41.128.0/17"
+        - "162.158.0.0/15"
+        - "104.16.0.0/13"
+        - "104.24.0.0/14"
+        - "172.64.0.0/13"
+        - "131.0.72.0/22"
+        - "2400:cb00::/32"
+        - "2606:4700::/32"
+        - "2803:f800::/32"
+        - "2405:b500::/32"
+        - "2405:8100::/32"
+        - "2a06:98c0::/29"
+        - "2c0f:f248::/32"
   websecure:
     address: ":443"
-  # Internal entrypoint for ping / health checks only
+    forwardedHeaders:
+      # Trust Cloudflare proxy IPs so the real client IP is forwarded correctly.
+      # See: https://www.cloudflare.com/ips/
+      trustedIPs:
+        - "173.245.48.0/20"
+        - "103.21.244.0/22"
+        - "103.22.200.0/22"
+        - "103.31.4.0/22"
+        - "141.101.64.0/18"
+        - "108.162.192.0/18"
+        - "190.93.240.0/20"
+        - "188.114.96.0/20"
+        - "197.234.240.0/22"
+        - "198.41.128.0/17"
+        - "162.158.0.0/15"
+        - "104.16.0.0/13"
+        - "104.24.0.0/14"
+        - "172.64.0.0/13"
+        - "131.0.72.0/22"
+        - "2400:cb00::/32"
+        - "2606:4700::/32"
+        - "2803:f800::/32"
+        - "2405:b500::/32"
+        - "2405:8100::/32"
+        - "2a06:98c0::/29"
+        - "2c0f:f248::/32"
+  # Internal entrypoint for ping / health checks / metrics only
   traefik:
     address: ":8082"
 
@@ -58,6 +121,16 @@ providers:
   file:
     directory: /etc/traefik/dynamic
     watch: true
+
+# Prometheus metrics – scraped from the internal entrypoint (port 8082)
+# alongside the ping / health-check endpoint.
+# To scrape, configure Prometheus with: http://<traefik-host>:8082/metrics
+metrics:
+  prometheus:
+    addEntryPointsLabels: true
+    addRoutersLabels: true
+    addServicesLabels: true
+    entryPoint: traefik
 
 # CrowdSec bouncer Traefik plugin
 # The plugin is downloaded from the Traefik plugin registry at startup.
