@@ -121,13 +121,13 @@ services:
       # Traefik routing labels (only used when the traefik profile is active)
       - "traefik.enable=true"
       # HTTPS router – main traffic via CrowdSec bouncer middleware
-      - "traefik.http.routers.meshcentral.rule=Host(`${MESHCENTRAL_HOSTNAME}`)"
+      - "traefik.http.routers.meshcentral.rule=Host(${MESHCENTRAL_HOSTNAME})"
       - "traefik.http.routers.meshcentral.entrypoints=websecure"
       - "traefik.http.routers.meshcentral.tls=true"
       - "traefik.http.routers.meshcentral.middlewares=crowdsec@file"
       - "traefik.http.services.meshcentral.loadbalancer.server.port=4430"
       # HTTP router – redirect to HTTPS, also gated by CrowdSec
-      - "traefik.http.routers.meshcentral-http.rule=Host(`${MESHCENTRAL_HOSTNAME}`)"
+      - "traefik.http.routers.meshcentral-http.rule=Host(${MESHCENTRAL_HOSTNAME})"
       - "traefik.http.routers.meshcentral-http.entrypoints=web"
       - "traefik.http.routers.meshcentral-http.middlewares=redirect-to-https@file,crowdsec@file"
     networks:
