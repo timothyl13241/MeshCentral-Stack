@@ -44,7 +44,7 @@ http:
     # Protect this route with a Cloudflare Access policy (recommended) and/or
     # uncomment the dashboard-auth middleware above for BasicAuth.
     traefik-dashboard:
-      rule: "Host(${TRAEFIK_DASHBOARD_HOSTNAME})"
+      rule: "Host(`${TRAEFIK_DASHBOARD_HOSTNAME}`)"
       entryPoints:
         - websecure
       service: api@internal
