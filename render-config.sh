@@ -96,6 +96,29 @@ else
     echo -e "${YELLOW}Note: Install 'jq' for JSON validation${NC}"
 fi
 
+# ------------------------------------------------------------------
+# Traefik dynamic middleware config
+# ------------------------------------------------------------------
+TRAEFIK_EXAMPLE="${SCRIPT_DIR}/traefik/dynamic/middlewares.yml.example"
+TRAEFIK_OUTPUT="${SCRIPT_DIR}/traefik/dynamic/middlewares.yml"
+
+if [ -f "$TRAEFIK_EXAMPLE" ]; then
+    # Substitute TRAEFIK_CROWDSEC_BOUNCER_KEY (may be empty on first setup)
+    export TRAEFIK_CROWDSEC_BOUNCER_KEY="${TRAEFIK_CROWDSEC_BOUNCER_KEY:-}"
+
+    if [ -f "$TRAEFIK_OUTPUT" ] && [ -z "${TRAEFIK_CROWDSEC_BOUNCER_KEY}" ]; then
+        # Avoid overwriting a key that may have been injected by the crowdsec-init container
+        echo -e "${GREEN}✓ Traefik middleware config already exists (skipping re-render)${NC}"
+        echo -e "${YELLOW}  Set TRAEFIK_CROWDSEC_BOUNCER_KEY in .env and re-run to regenerate.${NC}"
+    else
+        envsubst '$TRAEFIK_CROWDSEC_BOUNCER_KEY' < "$TRAEFIK_EXAMPLE" > "$TRAEFIK_OUTPUT"
+        echo -e "${GREEN}✓ Traefik middleware config rendered: $TRAEFIK_OUTPUT${NC}"
+        if [ -z "${TRAEFIK_CROWDSEC_BOUNCER_KEY}" ]; then
+            echo -e "${YELLOW}  TRAEFIK_CROWDSEC_BOUNCER_KEY is empty – run the crowdsec-init profile to populate it.${NC}"
+        fi
+    fi
+fi
+
 echo ""
 echo "=================================================="
 echo "Next steps:"

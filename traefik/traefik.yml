@@ -1,0 +1,59 @@
+# Traefik v3 static configuration
+# Traffic flow: Cloudflare Tunnel → Traefik → MeshCentral
+#
+# CrowdSec integration:
+#   - JSON access log is written to /var/log/traefik/access.log (parsed by CrowdSec)
+#   - crowdsec-bouncer plugin applies CrowdSec LAPI decisions as a middleware
+#
+# Run with: docker compose --profile traefik up -d
+
+api:
+  dashboard: false
+
+# Health-check endpoint served on the dedicated internal entrypoint (port 8082)
+ping:
+  entryPoint: traefik
+
+log:
+  level: INFO
+  filePath: /var/log/traefik/traefik.log
+
+# JSON access log – consumed by CrowdSec (crowdsecurity/traefik collection)
+accessLog:
+  filePath: /var/log/traefik/access.log
+  format: json
+  fields:
+    headers:
+      defaultMode: drop
+      names:
+        CF-Connecting-IP: keep
+        X-Forwarded-For: keep
+        X-Real-IP: keep
+
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+  # Internal entrypoint for ping / health checks only
+  traefik:
+    address: ":8082"
+
+providers:
+  # Docker provider – discovers containers via traefik.* labels
+  docker:
+    exposedByDefault: false
+    network: meshcentral-frontend
+  # File provider – dynamic config directory, watched for live changes
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+# CrowdSec bouncer Traefik plugin
+# The plugin is downloaded from the Traefik plugin registry at startup.
+# API key is injected into dynamic/middlewares.yml by the crowdsec-init container.
+experimental:
+  plugins:
+    crowdsec-bouncer:
+      moduleName: "github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin"
+      version: "v1.3.5"

@@ -1,0 +1,27 @@
+http:
+  middlewares:
+    # CrowdSec bouncer – blocks IPs flagged by the CrowdSec LAPI.
+    # The API key (crowdsecLapiKey) is substituted from TRAEFIK_CROWDSEC_BOUNCER_KEY
+    # in your .env file by render-config.sh, or injected automatically by the
+    # crowdsec-init container.  After init, restart Traefik:
+    #   docker compose restart traefik
+    crowdsec:
+      plugin:
+        crowdsec-bouncer:
+          enabled: true
+          crowdsecLapiKey: ${TRAEFIK_CROWDSEC_BOUNCER_KEY}
+          crowdsecLapiHost: crowdsec:8080
+          crowdsecLapiScheme: http
+          crowdsecMode: live
+          updateIntervalSeconds: 15
+          defaultDecisionSeconds: 60
+          httpTimeout: 10
+          # Use CF-Connecting-IP as the real client IP when behind Cloudflare
+          forwardedHeadersCustomName: CF-Connecting-IP
+
+    # HTTP → HTTPS permanent redirect
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+

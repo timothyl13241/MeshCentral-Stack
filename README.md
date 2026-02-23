@@ -1,12 +1,13 @@
 # MeshCentral Docker Stack
 
-A secure, production-ready Docker Compose stack for [MeshCentral](https://meshcentral.com/), featuring a Web Application Firewall (nginx + ModSecurity + OWASP CRS) as the default reverse proxy, secure environment variable management, and optional CrowdSec integration.
+A secure, production-ready Docker Compose stack for [MeshCentral](https://meshcentral.com/), featuring multiple optional reverse proxy options, secure environment variable management, and optional CrowdSec integration.
 
 ### Service Roles
 
 - **MeshCentral**: Remote device management server for monitoring and controlling devices remotely
 - **MongoDB**: Persistent database with required authentication and optional encryption-at-rest capability
-- **WAF**: Default reverse proxy — nginx + ModSecurity + OWASP CRS for HTTP attack detection/blocking (`cloudflared → waf → meshcentral`)
+- **Traefik**: Optional reverse proxy with Docker label-based routing and CrowdSec bouncer plugin (`cloudflared → traefik → meshcentral`, profile: `traefik`)
+- **WAF**: Optional reverse proxy — nginx + ModSecurity + OWASP CRS for HTTP attack detection/blocking (`cloudflared → waf → meshcentral`, default – no profile required)
 - **Caddy**: Optional alternative reverse proxy with automatic HTTPS via Let's Encrypt using Cloudflare DNS challenge (profile: `caddy`)
 - **CrowdSec**: Optional automated intrusion prevention system with community-driven threat intelligence (profile: `crowdsec`)
 - **Cloudflared**: Optional Cloudflare Tunnel integration for enhanced security and zero-trust access (profile: `cloudflare`)
@@ -16,13 +17,14 @@ A secure, production-ready Docker Compose stack for [MeshCentral](https://meshce
 - **Network Isolation**: Separate frontend and internal backend networks
 - **MongoDB Authentication**: Required database authentication with dedicated user accounts
 - **Encrypted Storage Ready**: MongoDB configured for encryption-at-rest capability
+- **Traefik Reverse Proxy**: Container label-based routing with CrowdSec bouncer plugin for IP blocking (Optional)
 - **Web Application Firewall**: nginx + ModSecurity + OWASP CRS blocks common HTTP attacks (SQLi, XSS, RCE, etc.)
-- **Security Headers**: HSTS, CSP, X-Frame-Options, and more (add to nginx config as required)
+- **Security Headers**: HSTS, CSP, X-Frame-Options, and more (add to nginx/Traefik config as required)
 - **Real IP Preservation**: Proper forwarding of client IP through the proxy chain for accurate logging and rate limiting
 - **Password Policies**: Enforced strong password requirements
 - **Rate Limiting**: Built-in login rate limiting and invalid login tracking
 - **Secrets Management**: Secure environment-based configuration with no hardcoded credentials
-- **CrowdSec Integration**: Automated threat intelligence and IP reputation-based blocking (Optional)
+- **CrowdSec Integration**: Automated threat intelligence and IP reputation-based blocking via Traefik plugin and MeshCentral bouncer (Optional)
 
 ## 📋 Prerequisites
 
@@ -143,6 +145,13 @@ docker compose up -d
 
 # Start with CrowdSec protection
 docker compose --profile crowdsec up -d
+
+# Start with Traefik instead of WAF (cloudflared → traefik → meshcentral)
+# NOTE: Do not run both traefik and waf on the same host ports at the same time.
+docker compose --profile traefik up -d
+
+# Start with Traefik + CrowdSec + Cloudflare Tunnel
+docker compose --profile traefik --profile crowdsec --profile cloudflare up -d
 
 # Start with Cloudflare Tunnel (cloudflared → waf → meshcentral)
 docker compose --profile cloudflare up -d
@@ -317,7 +326,29 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 #### Cloudflared (Optional)
 - **Image**: `cloudflare/cloudflared:latest`
 - **Profile**: `cloudflare` (must be explicitly enabled)
-- **Purpose**: Secure tunneling through Cloudflare network; connects to the WAF (`waf` service) in the default setup
+- **Purpose**: Secure tunneling through Cloudflare network; connects to the Traefik (`traefik` profile) or WAF (`waf` service) in the frontend network
+
+#### Traefik (Optional)
+- **Image**: `traefik:v3`
+- **Profile**: `traefik` (must be explicitly enabled; alternative to the default WAF)
+- **Ports**:
+  - `TRAEFIK_HTTP_PORT` (default 80)
+  - `TRAEFIK_HTTPS_PORT` (default 443)
+- **Purpose**: Modern reverse proxy with Docker label-based routing and native CrowdSec bouncer plugin integration
+- **Features**:
+  - Automatic container discovery via Docker labels
+  - CrowdSec bouncer plugin middleware (blocks flagged IPs at the edge)
+  - JSON access log for CrowdSec threat analysis (`crowdsecurity/traefik` collection)
+  - HTTP → HTTPS redirect middleware
+  - WebSocket pass-through for MeshCentral agent connections
+  - File-provider hot-reload for dynamic config changes
+- **Configuration**:
+  - `traefik/traefik.yml` – Static config (entrypoints, providers, plugin declaration)
+  - `traefik/dynamic/middlewares.yml` – Dynamic config with CrowdSec middleware (git-ignored; created by `render-config.sh`)
+  - `traefik/dynamic/middlewares.yml.example` – Template for the dynamic config (tracked in git)
+  - `crowdsec/acquis.d/traefik.yaml` – CrowdSec log acquisition rule for Traefik access logs
+- **Volumes**:
+  - `traefik-logs`: Persists Traefik access logs; mounted read-only by CrowdSec for log analysis
 
 #### WAF – nginx + ModSecurity + OWASP CRS (Default reverse proxy)
 - **Build**: Custom image built from `waf/Dockerfile` (nginx:alpine base; ModSecurity v3, ModSecurity-nginx connector, and OWASP CRS compiled from source)
@@ -341,13 +372,15 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 - **Profile**: `crowdsec` (must be explicitly enabled)
 - **Port**: 8080 (LAPI, internal only)
 - **Features**:
-  - Automated bouncer key generation for MeshCentral
+  - Automated bouncer key generation for MeshCentral and Traefik
   - Community-driven threat intelligence
   - Real-time IP reputation blocking
+  - Log analysis from Traefik (`traefik-logs` volume, `crowdsecurity/traefik` collection)
   - Log analysis from WAF (`waf-logs` volume)
 - **Volumes**:
   - `crowdsec-config`: CrowdSec configuration
   - `crowdsec-data`: Threat intelligence database
+  - `traefik-logs`: Mounted read-only for Traefik access log analysis
   - `waf-logs`: Mounted read-only for WAF log analysis
 
 ### Network Architecture
@@ -362,6 +395,20 @@ Internet
 [WAF – nginx + ModSecurity + OWASP CRS] ← meshcentral-frontend (bridge)
     ↓                                          ↓ (logs – waf-logs volume)
 [MeshCentral] ←────────────────────────→ [CrowdSec (optional, sidecar)]
+    ↓
+[MongoDB] ← meshcentral-backend (internal)
+```
+
+Alternative — Traefik as reverse proxy (profile: `traefik`):
+
+```
+Cloudflare Tunnel
+    ↓
+[Traefik v3] ← meshcentral-frontend (bridge)
+    ↓  ↓ (crowdsec-bouncer plugin middleware)       ↑ (JSON access logs – traefik-logs volume)
+    ↓  [CrowdSec LAPI] ────────────────────────────┘
+    ↓       ↓ (decisions also enforce via MeshCentral bouncer)
+[MeshCentral]
     ↓
 [MongoDB] ← meshcentral-backend (internal)
 ```
@@ -570,8 +617,9 @@ docker compose exec waf tail -f /var/log/nginx/access.log
 
 In the Cloudflare dashboard:
 - **Public hostname**: `mesh.example.com`
-- **Service**: `http://waf:80` (WAF is the default reverse proxy)
-- **TLS verification**: TLS is terminated by Cloudflare; the WAF receives plain HTTP internally
+- **Service (WAF default)**: `http://waf:80`
+- **Service (Traefik profile)**: `http://traefik:80`
+- **TLS verification**: TLS is terminated by Cloudflare; the proxy receives plain HTTP internally
 
 ### 3. Start with Cloudflare Profile
 
@@ -702,6 +750,109 @@ docker compose exec waf tail -f /var/log/nginx/access.log
 docker compose exec waf tail -f /var/log/nginx/modsec_audit.log
 ```
 
+## 🚦 Traefik Reverse Proxy Setup
+
+Traefik is an optional reverse proxy that can be used **instead of the WAF** when you want Docker label-based service discovery, built-in Let's Encrypt support, and native CrowdSec integration via the [crowdsec-bouncer-traefik-plugin](https://github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin).
+
+**Traffic flow:**
+
+```
+Cloudflare Tunnel → Traefik → MeshCentral
+```
+
+**CrowdSec integration:**
+- Traefik writes **JSON access logs** to the `traefik-logs` volume — parsed by CrowdSec using the `crowdsecurity/traefik` collection
+- The **CrowdSec bouncer Traefik plugin** (`crowdsec-bouncer-traefik-plugin`) applies LAPI decisions as a middleware, blocking flagged IPs at the Traefik edge
+- The **MeshCentral CrowdSec bouncer** remains active for defence-in-depth
+
+> **⚠️ Port conflict**: Do **not** run both `traefik` and `waf` profiles at the same time using the same host ports (default `80`/`443`).  
+> Set `TRAEFIK_HTTP_PORT` / `TRAEFIK_HTTPS_PORT` to different values in `.env` if you need both running simultaneously.
+
+### Quick Start
+
+```bash
+# 1. Render configs (creates traefik/dynamic/middlewares.yml from the example template)
+./render-config.sh
+
+# 2. Start the stack with Traefik + CrowdSec + Cloudflare Tunnel
+docker compose --profile traefik --profile crowdsec --profile cloudflare up -d
+
+# 3. Run the init container to create both the MeshCentral and Traefik CrowdSec bouncers
+docker compose --profile crowdsec-init run --rm crowdsec-init
+
+# Traefik picks up the updated middlewares.yml automatically (file-watcher hot-reload).
+# Restart MeshCentral to apply the MeshCentral bouncer key:
+docker compose restart meshcentral
+```
+
+### Architecture
+
+| File | Purpose |
+|---|---|
+| `traefik/traefik.yml` | Traefik static config: entrypoints (80/443/8082), Docker/file providers, access log, CrowdSec plugin declaration |
+| `traefik/dynamic/middlewares.yml.example` | Template for the dynamic CrowdSec middleware config (tracked in git) |
+| `traefik/dynamic/middlewares.yml` | Rendered dynamic config with CrowdSec bouncer API key (git-ignored, created by `render-config.sh`) |
+| `crowdsec/acquis.d/traefik.yaml` | CrowdSec log acquisition rule for Traefik JSON access logs |
+
+### Cloudflare Tunnel Configuration for Traefik
+
+In the Cloudflare Zero Trust dashboard, set the tunnel public hostname service to:
+
+```
+http://traefik:80
+```
+
+TLS is terminated by Cloudflare; Traefik receives plain HTTP internally and routes traffic to MeshCentral on port 4430.
+
+### Configuring the Cloudflare Tunnel service endpoint
+
+- **Service**: `http://traefik:80` (when using Traefik profile)
+- **Service**: `http://waf:80` (when using the default WAF)
+
+### MeshCentral Traefik Labels
+
+MeshCentral is pre-configured with Traefik labels in `docker-compose.yml`:
+
+- Routes `MESHCENTRAL_HOSTNAME` on port 443 (HTTPS) and port 80 (HTTP → HTTPS redirect)
+- Applies the `crowdsec@file` middleware (CrowdSec bouncer) to all routes
+- Proxies to MeshCentral on port 4430
+
+Labels are only active when Traefik is running (controlled by `traefik.enable=true` and `exposedByDefault: false` in `traefik/traefik.yml`).
+
+### TLS with Traefik
+
+By default, Traefik uses a self-signed certificate on port 443. For a proper certificate, add an ACME (Let's Encrypt) configuration to `traefik/traefik.yml`:
+
+```yaml
+certificatesResolvers:
+  cloudflare:
+    acme:
+      email: your@email.com
+      storage: /etc/traefik/acme.json
+      dnsChallenge:
+        provider: cloudflare
+```
+
+And set environment variables in the `traefik` service in `docker-compose.yml`:
+
+```yaml
+environment:
+  CF_DNS_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+```
+
+### Verifying Traefik Operation
+
+```bash
+# Check Traefik container status
+docker compose ps traefik
+
+# View Traefik access logs (parsed by CrowdSec)
+docker compose exec traefik tail -f /var/log/traefik/access.log
+
+# Check active Traefik routers/services via API
+docker compose exec traefik wget -qO- http://localhost:8082/api/rawdata | jq .
+```
+
 ## 🛡️ CrowdSec Integration Setup
 
 CrowdSec is an open-source security engine that analyzes visitor behavior and creates an IP reputation database. This stack includes automated integration with CrowdSec to protect your MeshCentral instance from malicious actors.
@@ -732,19 +883,20 @@ docker compose restart meshcentral
 
 The init container will:
 - Wait for CrowdSec LAPI to be ready
-- Generate a bouncer API key (or detect existing one)
-- Update the config.json with CrowdSec settings
-- Display the API key for your records
+- Generate a **MeshCentral bouncer** API key and update `config.json`
+- Generate a **Traefik bouncer** API key and update `traefik/dynamic/middlewares.yml`
+- Display both API keys for your records
+- Traefik will hot-reload the middleware config automatically (file-watcher)
 
 #### 2. Verify Integration
 
-Check that CrowdSec is running and the bouncer was registered:
+Check that CrowdSec is running and the bouncers were registered:
 
 ```bash
 # Check CrowdSec status
 docker compose ps crowdsec
 
-# List registered bouncers (should show 'meshcentral')
+# List registered bouncers (should show 'meshcentral' and 'meshcentral-traefik')
 docker exec meshcentral-crowdsec cscli bouncers list
 
 # Check MeshCentral logs
@@ -828,14 +980,15 @@ CROWDSEC_BOUNCER_NAME=meshcentral
 The automated setup uses a lightweight Docker init container that:
 
 1. **Waits for CrowdSec**: Ensures the CrowdSec LAPI is fully operational
-2. **Checks for Existing Bouncer**: Avoids creating duplicate bouncers
-3. **Generates API Key**: Creates a new bouncer registration with `cscli`
-4. **Updates Config**: Modifies the MeshCentral config.json in the Docker volume
-5. **Validates**: Ensures the configuration is valid JSON before committing
+2. **Checks for Existing Bouncers**: Avoids creating duplicate bouncers
+3. **Generates MeshCentral API Key**: Creates a `meshcentral` bouncer registration with `cscli` and updates `meshcentral-data/config.json`
+4. **Generates Traefik API Key**: Creates a `meshcentral-traefik` bouncer registration with `cscli` and injects the key into `traefik/dynamic/middlewares.yml`; Traefik hot-reloads the middleware via its file-watcher
+5. **Validates**: Ensures the MeshCentral configuration is valid JSON before committing
 
-The init container runs once and exits. The bouncer API key persists in:
+The init container runs once and exits. Bouncer API keys persist in:
 - CrowdSec's database (in the `crowdsec-data` volume)
-- MeshCentral's config.json (in the `meshcentral-data` volume)
+- MeshCentral's `config.json` (in the `meshcentral-data` volume)
+- Traefik's dynamic config (`traefik/dynamic/middlewares.yml` – git-ignored, on the host)
 
 ### Advanced: Regenerating Bouncer Keys
 
