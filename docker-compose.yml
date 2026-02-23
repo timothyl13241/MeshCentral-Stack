@@ -128,6 +128,7 @@ services:
       - "traefik.http.routers.meshcentral.middlewares=crowdsec@file"
       - "traefik.http.services.meshcentral.loadbalancer.server.port=4430"
       - "traefik.http.services.meshcentral.loadbalancer.server.scheme=http"
+      - "traefik.docker.network=meshcentral-frontend"
       # HTTP router – redirect to HTTPS, also gated by CrowdSec
       - "traefik.http.routers.meshcentral-http.rule=Host(`${MESHCENTRAL_HOSTNAME}`)"
       - "traefik.http.routers.meshcentral-http.entrypoints=web"
