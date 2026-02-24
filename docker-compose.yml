@@ -51,6 +51,8 @@ services:
       - waf-logs:/var/log/nginx:ro
       # Custom log acquisition rules (adds Traefik log source)
       - ./crowdsec/acquis.d:/etc/crowdsec/acquis.d:ro
+      # AppSec mount
+      - ./crowdsec/acquis.d/appsec.yaml:/etc/crowdsec/acquis.d/appsec.yaml
     networks:
       - meshcentral-backend
       - meshcentral-frontend
