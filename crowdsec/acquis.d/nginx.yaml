@@ -1,0 +1,7 @@
+# CrowdSec log acquisition – WAF (nginx + ModSecurity) access logs
+# Tells CrowdSec to tail the nginx access log written by the waf service and
+# parse it with the crowdsecurity/nginx collection parsers.
+filenames:
+  - /var/log/nginx/access.log
+labels:
+  type: nginx

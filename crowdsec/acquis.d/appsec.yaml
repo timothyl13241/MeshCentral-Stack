@@ -6,10 +6,11 @@
 # docker-compose.yml).
 source: appsec
 listen_addr: 0.0.0.0:7422
-# appsec_config references the AppSec config installed by the
-# crowdsecurity/appsec-virtual-patching collection; it provides virtual patching
-# rules that block requests targeting known CVEs.
-appsec_config: crowdsecurity/virtual-patching
+# appsec_config references the AppSec config provided by the
+# crowdsecurity/appsec-generic-rules collection (crowdsecurity/appsec-default).
+# It loads virtual-patching rules plus the appsec-generic-test rule required
+# by the CrowdSec health-check (GET /crowdsec-test-NtktlJHV4TfBSK3wvlhiOBnl).
+appsec_config: crowdsecurity/appsec-default
 name: myAppSecComponent
 labels:
   type: appsec
