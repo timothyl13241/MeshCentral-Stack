@@ -49,15 +49,13 @@ services:
       - traefik-logs:/var/log/traefik:ro
       # Mount WAF logs for analysis (when using the waf profile)
       - waf-logs:/var/log/nginx:ro
-      # Custom log acquisition rules (adds Traefik log source)
+      # Custom log acquisition rules (adds Traefik log source and AppSec component)
       - ./crowdsec/acquis.d:/etc/crowdsec/acquis.d:ro
-      # AppSec mount
-      - ./crowdsec/acquis.d/appsec.yaml:/etc/crowdsec/acquis.d/appsec.yaml
     networks:
       - meshcentral-backend
       - meshcentral-frontend
     healthcheck:
-      test: ["CMD", "cscli", "version"]
+      test: ["CMD", "cscli", "lapi", "status"]
       interval: 30s
       timeout: 10s
       retries: 3
