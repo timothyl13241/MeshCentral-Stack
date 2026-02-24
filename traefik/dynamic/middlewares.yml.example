@@ -18,6 +18,15 @@ http:
           httpTimeout: 10
           # Use CF-Connecting-IP as the real client IP when behind Cloudflare
           forwardedHeadersCustomName: CF-Connecting-IP
+          # AppSec component – forwards requests to CrowdSec for WAF-style inspection.
+          # Requires the crowdsecurity/appsec-virtual-patching and
+          # crowdsecurity/appsec-generic-rules collections to be installed (via the
+          # COLLECTIONS env var in docker-compose.yml) and the
+          # crowdsec/acquis.d/appsec.yaml acquisition config in the CrowdSec container.
+          crowdsecAppsecEnabled: true
+          crowdsecAppsecHost: crowdsec:7422
+          crowdsecAppsecFailureBlock: false
+          crowdsecAppsecUnreachableBlock: false
 
     # HTTP → HTTPS permanent redirect
     redirect-to-https:
