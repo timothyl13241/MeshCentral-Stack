@@ -230,7 +230,7 @@ services:
     networks:
       - meshcentral-monitoring
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/bin/loki", "-health"]
       interval: 30s
       timeout: 10s
       retries: 3
