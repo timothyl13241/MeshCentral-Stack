@@ -1,0 +1,33 @@
+# Promtail configuration
+# Tails the Traefik JSON access log and ships entries to Loki.
+# The pipeline keeps HTTP status as a low-cardinality label;
+# all other fields (ClientHost, RequestPath, User-Agent, …) are left in the log
+# line and parsed at query time via Loki's | json pipeline stage.
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: traefik-access
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: traefik-access
+          __path__: /var/log/traefik/access.log
+    pipeline_stages:
+      # Parse the JSON access log to extract the HTTP status code as a label.
+      # All other high-cardinality fields are kept in the raw log line so they
+      # can be aggregated in Loki queries with | json without inflating the index.
+      - json:
+          expressions:
+            status: DownstreamStatus
+      - labels:
+          status:

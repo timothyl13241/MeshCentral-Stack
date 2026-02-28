@@ -281,6 +281,108 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 8,
+      "title": "Connections per IP Address",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 20 },
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+      "description": "Top 10 client IPs by request count within the selected timeframe.",
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (ClientHost) (count_over_time({job=\"traefik-access\"} | json | __error__=\"\" [$__range])))",
+          "legendFormat": "{{ClientHost}}",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Top Requested URLs",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 20 },
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+      "description": "Top 10 requested URL paths by count within the selected timeframe.",
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (RequestPath) (count_over_time({job=\"traefik-access\"} | json | __error__=\"\" [$__range])))",
+          "legendFormat": "{{RequestPath}}",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Top Requesting Browsers",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 20 },
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+      "description": "Top 10 User-Agent strings by request count within the selected timeframe.",
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "purple", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (request_User_Agent) (count_over_time({job=\"traefik-access\"} | json | __error__=\"\" [$__range])))",
+          "legendFormat": "{{request_User_Agent}}",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ]
     }
   ],
   "refresh": "30s",
@@ -294,6 +396,13 @@
         "query": "prometheus",
         "refresh": 1,
         "type": "datasource"
+      },
+      {
+        "hide": 2,
+        "name": "DS_LOKI",
+        "query": "loki",
+        "refresh": 1,
+        "type": "datasource"
       }
     ]
   },
@@ -302,5 +411,5 @@
   "timezone": "browser",
   "title": "MeshCentral — Traffic & Security",
   "uid": "meshcentral-security",
-  "version": 1
+  "version": 2
 }
