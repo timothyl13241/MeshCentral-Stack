@@ -229,7 +229,12 @@ services:
       - loki-data:/loki
     networks:
       - meshcentral-monitoring
-    # No healthcheck: grafana/promtail will still work as long as Loki is reachable on the network.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/3100 && printf 'GET /ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3; exec 3<&-"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     profiles:
       - monitoring
 
