@@ -59,6 +59,7 @@ services:
       retries: 3
       start_period: 40s
     profiles:
+      - crowdsec       # Only run when explicitly enabled
       - crowdsec-init  # Also start when running the init helper
 
   # CrowdSec Init Helper (Optional - only needed for automated setup)
