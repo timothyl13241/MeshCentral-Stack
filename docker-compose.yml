@@ -330,10 +330,16 @@ networks:
     name: meshcentral-backend
     driver: bridge
     internal: true
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
   meshcentral-monitoring:
     name: meshcentral-monitoring
     driver: bridge
     internal: true
+    ipam:
+      config:
+        -subnet: 172.30.0.0/16
 
 volumes:
   mongodb-data:
