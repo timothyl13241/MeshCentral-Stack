@@ -188,6 +188,8 @@ services:
       start_period: 15s
 
   # Prometheus – scrapes Traefik (:8082/metrics) and CrowdSec (:6060/metrics).
+  # Placed on both meshcentral-monitoring (isolated backend) and meshcentral-frontend
+  # so it can reach Traefik and CrowdSec metrics endpoints on the frontend network.
   # Start with: docker compose --profile monitoring up -d
   prometheus:
     image: prom/prometheus:latest
@@ -203,7 +205,8 @@ services:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     networks:
-      - meshcentral-frontend
+      - meshcentral-monitoring
+      - meshcentral-frontend  # Required to scrape traefik:8082 and crowdsec:6060
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
       interval: 30s
@@ -213,9 +216,52 @@ services:
     profiles:
       - monitoring
 
+  # Loki – log aggregation backend; ingests Traefik access logs shipped by Promtail.
+  # Used by Grafana to power the per-IP, per-URL, and per-browser dashboard panels.
+  # Isolated to meshcentral-monitoring; not reachable from the frontend network.
+  loki:
+    image: grafana/loki:latest
+    container_name: meshcentral-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./monitoring/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    networks:
+      - meshcentral-monitoring
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    profiles:
+      - monitoring
+
+  # Promtail – log collector; tails the Traefik JSON access log and ships to Loki.
+  # Isolated to meshcentral-monitoring; reads logs via a shared volume (no network path needed
+  # to Traefik) and pushes to Loki on the same monitoring network.
+  promtail:
+    image: grafana/promtail:latest
+    container_name: meshcentral-promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail.yml
+    volumes:
+      - ./monitoring/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      # Mount the same Traefik access log volume that CrowdSec also reads
+      - traefik-logs:/var/log/traefik:ro
+    networks:
+      - meshcentral-monitoring
+    depends_on:
+      loki:
+        condition: service_healthy
+    profiles:
+      - monitoring
+
   # Grafana – pre-provisioned with a Prometheus datasource and a combined
   # Traefik + CrowdSec metrics dashboard.
   # Accessible via Traefik on GRAFANA_HOSTNAME (set in .env).
+  # On meshcentral-frontend for Traefik routing and meshcentral-monitoring for datasource access.
   grafana:
     image: grafana/grafana:latest
     container_name: meshcentral-grafana
@@ -223,6 +269,9 @@ services:
     depends_on:
       prometheus:
         condition: service_healthy
+      loki:
+        condition: service_healthy
+        required: false  # Optional – skip if loki is not yet running
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
@@ -243,7 +292,8 @@ services:
       - "traefik.http.services.grafana.loadbalancer.server.port=3000"
       - "traefik.docker.network=meshcentral-frontend"
     networks:
-      - meshcentral-frontend
+      - meshcentral-frontend    # Traefik can proxy to Grafana on this network
+      - meshcentral-monitoring  # Grafana can reach Prometheus and Loki on this network
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
@@ -280,6 +330,10 @@ networks:
     name: meshcentral-backend
     driver: bridge
     internal: true
+  meshcentral-monitoring:
+    name: meshcentral-monitoring
+    driver: bridge
+    internal: true
 
 volumes:
   mongodb-data:
@@ -301,6 +355,8 @@ volumes:
   traefik-logs:
     driver: local
   prometheus-data:
+    driver: local
+  loki-data:
     driver: local
   grafana-data:
     driver: local

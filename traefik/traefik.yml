@@ -50,6 +50,7 @@ accessLog:
         CF-Connecting-IP: keep
         X-Forwarded-For: keep
         X-Real-IP: keep
+        User-Agent: keep
 
 entryPoints:
   web:
