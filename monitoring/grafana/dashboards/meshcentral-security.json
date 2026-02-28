@@ -1,0 +1,306 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Requests — Last Hour",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(traefik_entrypoint_requests_total[1h]))",
+          "legendFormat": "Total",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Active CrowdSec Bans",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "red", "value": 10 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(cs_active_decisions{type=\"ban\"}) or vector(0)",
+          "legendFormat": "Bans",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "HTTP 5xx Error Rate",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "100 * sum(rate(traefik_entrypoint_requests_total{code=~\"5..\"}[5m])) / sum(rate(traefik_entrypoint_requests_total[5m]))",
+          "legendFormat": "5xx %",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Request Rate by HTTP Status",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "reqps"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "5xx" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "4xx" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "2xx" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(traefik_entrypoint_requests_total{code=~\"2..\"}[5m]))",
+          "legendFormat": "2xx",
+          "refId": "2xx"
+        },
+        {
+          "expr": "sum(rate(traefik_entrypoint_requests_total{code=~\"3..\"}[5m]))",
+          "legendFormat": "3xx",
+          "refId": "3xx"
+        },
+        {
+          "expr": "sum(rate(traefik_entrypoint_requests_total{code=~\"4..\"}[5m]))",
+          "legendFormat": "4xx",
+          "refId": "4xx"
+        },
+        {
+          "expr": "sum(rate(traefik_entrypoint_requests_total{code=~\"5..\"}[5m]))",
+          "legendFormat": "5xx",
+          "refId": "5xx"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Response Time Percentiles (per service)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service))",
+          "legendFormat": "p50 {{service}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service))",
+          "legendFormat": "p95 {{service}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service))",
+          "legendFormat": "p99 {{service}}",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "CrowdSec Active Decisions",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (type) (cs_active_decisions)",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "CrowdSec Alerts — Top Scenarios (1h)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "bars",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (name) (increase(cs_alerts_count[1h]))",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["traefik", "crowdsec", "meshcentral"],
+  "templating": {
+    "list": [
+      {
+        "hide": 2,
+        "name": "DS_PROMETHEUS",
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-3h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "MeshCentral — Traffic & Security",
+  "uid": "meshcentral-security",
+  "version": 1
+}

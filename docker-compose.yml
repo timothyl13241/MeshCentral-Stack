@@ -38,7 +38,7 @@ services:
       # crowdsecurity/traefik parses Traefik JSON access logs
       # crowdsecurity/appsec-virtual-patching and crowdsecurity/appsec-generic-rules
       # enable the AppSec component (WAF-style request inspection via port 7422)
-      COLLECTIONS: "crowdsecurity/http-cve crowdsecurity/whitelist-good-actors crowdsecurity/iptables crowdsecurity/linux crowdsecurity/traefik crowdsecurity/nginx crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules"
+      COLLECTIONS: "crowdsecurity/http-cve crowdsecurity/whitelist-good-actors crowdsecurity/iptables crowdsecurity/linux crowdsecurity/traefik crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules"
       # Enable metrics
       METRICS_ENABLED: "true"
     volumes:
@@ -274,6 +274,72 @@ services:
     profiles:
       - caddy  # Only start when explicitly enabled
 
+  # Prometheus – scrapes Traefik (:8082/metrics) and CrowdSec (:6060/metrics).
+  # Start with: docker compose --profile monitoring up -d
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: meshcentral-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - meshcentral-frontend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    profiles:
+      - monitoring
+
+  # Grafana – pre-provisioned with a Prometheus datasource and a combined
+  # Traefik + CrowdSec metrics dashboard.
+  # Accessible via Traefik on GRAFANA_HOSTNAME (set in .env).
+  grafana:
+    image: grafana/grafana:latest
+    container_name: meshcentral-grafana
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SERVER_ROOT_URL: "https://${GRAFANA_HOSTNAME}"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    labels:
+      # Traefik routing – accessible on its own public hostname via Cloudflare Tunnel.
+      # Protect with a Cloudflare Access policy (recommended).
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`${GRAFANA_HOSTNAME}`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls=true"
+      - "traefik.http.routers.grafana.middlewares=crowdsec@file"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      - "traefik.docker.network=meshcentral-frontend"
+    networks:
+      - meshcentral-frontend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    profiles:
+      - monitoring
+
   # Cloudflared Tunnel (Optional - remove if not using Cloudflare Tunnel)
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -329,4 +395,8 @@ volumes:
   waf-logs:
     driver: local
   traefik-logs:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
     driver: local
