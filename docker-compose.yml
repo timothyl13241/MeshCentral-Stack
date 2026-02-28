@@ -59,7 +59,6 @@ services:
       retries: 3
       start_period: 40s
     profiles:
-      - crowdsec       # Only start when explicitly enabled
       - crowdsec-init  # Also start when running the init helper
 
   # CrowdSec Init Helper (Optional - only needed for automated setup)
@@ -186,8 +185,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
-    profiles:
-      - traefik  # Only start when explicitly enabled
 
   # Prometheus – scrapes Traefik (:8082/metrics) and CrowdSec (:6060/metrics).
   # Start with: docker compose --profile monitoring up -d
