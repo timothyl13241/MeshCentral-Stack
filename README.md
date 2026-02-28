@@ -1,15 +1,15 @@
 # MeshCentral Docker Stack
 
-A secure, production-ready Docker Compose stack for [MeshCentral](https://meshcentral.com/), featuring multiple optional reverse proxy options, secure environment variable management, and optional CrowdSec integration.
+A secure, production-ready Docker Compose stack for [MeshCentral](https://meshcentral.com/), featuring Traefik as the reverse proxy, CrowdSec for intrusion prevention, optional Prometheus + Grafana monitoring, secure environment variable management, and Cloudflare Tunnel integration.
 
 ### Service Roles
 
 - **MeshCentral**: Remote device management server for monitoring and controlling devices remotely
 - **MongoDB**: Persistent database with required authentication and optional encryption-at-rest capability
-- **Traefik**: Optional reverse proxy with Docker label-based routing and CrowdSec bouncer plugin (`cloudflared → traefik → meshcentral`, profile: `traefik`)
-- **WAF**: Optional reverse proxy — nginx + ModSecurity + OWASP CRS for HTTP attack detection/blocking (`cloudflared → waf → meshcentral`, default – no profile required)
-- **Caddy**: Optional alternative reverse proxy with automatic HTTPS via Let's Encrypt using Cloudflare DNS challenge (profile: `caddy`)
-- **CrowdSec**: Optional automated intrusion prevention system with community-driven threat intelligence (profile: `crowdsec`)
+- **Traefik**: Reverse proxy with Docker label-based routing and CrowdSec bouncer plugin (`cloudflared → traefik → meshcentral`, profile: `traefik`)
+- **CrowdSec**: Optional automated intrusion prevention system with community-driven threat intelligence and AppSec WAF inspection (profile: `crowdsec`)
+- **Prometheus**: Optional metrics collection — scrapes Traefik and CrowdSec endpoints (profile: `monitoring`)
+- **Grafana**: Optional dashboard — pre-provisioned with a "MeshCentral — Traffic & Security" dashboard (profile: `monitoring`)
 - **Cloudflared**: Optional Cloudflare Tunnel integration for enhanced security and zero-trust access (profile: `cloudflare`)
 
 ## 🔒 Security Features
@@ -17,9 +17,9 @@ A secure, production-ready Docker Compose stack for [MeshCentral](https://meshce
 - **Network Isolation**: Separate frontend and internal backend networks
 - **MongoDB Authentication**: Required database authentication with dedicated user accounts
 - **Encrypted Storage Ready**: MongoDB configured for encryption-at-rest capability
-- **Traefik Reverse Proxy**: Container label-based routing with CrowdSec bouncer plugin for IP blocking (Optional)
-- **Web Application Firewall**: nginx + ModSecurity + OWASP CRS blocks common HTTP attacks (SQLi, XSS, RCE, etc.)
-- **Security Headers**: HSTS, CSP, X-Frame-Options, and more (add to nginx/Traefik config as required)
+- **Traefik Reverse Proxy**: Container label-based routing with CrowdSec bouncer plugin for IP blocking
+- **CrowdSec AppSec**: WAF-style HTTP request inspection via the CrowdSec AppSec component (no separate WAF service needed)
+- **Security Headers**: HSTS, CSP, X-Frame-Options, and more (add to Traefik dynamic config as required)
 - **Real IP Preservation**: Proper forwarding of client IP through the proxy chain for accurate logging and rate limiting
 - **Password Policies**: Enforced strong password requirements
 - **Rate Limiting**: Built-in login rate limiting and invalid login tracking
@@ -85,20 +85,12 @@ The MeshCentral configuration uses a template-based approach with environment va
 - Generates `meshcentral-data/config.json` with actual values
 - Validates the generated JSON (if `jq` is installed)
 
-**Caddyfile Configuration:**
-- Caddy automatically substitutes environment variables at runtime using `{$VARNAME}` syntax
-- The Caddyfile is directly mounted from `caddy/Caddyfile` - no rendering needed
-- Environment variables like `MESHCENTRAL_HOSTNAME`, `ACME_EMAIL`, and `CLOUDFLARE_API_TOKEN` are passed via docker-compose.yml
-
 **Important:** You must run `./render-config.sh` whenever you change environment variables in `.env`.
 
 ### 4. Update Configuration (Optional)
 
 The MeshCentral template file contains base configuration with environment variable placeholders:
 - `meshcentral-data/config.json.template` - MeshCentral configuration
-
-The Caddyfile uses Caddy's native environment variable substitution:
-- `caddy/Caddyfile` - Caddy reverse proxy configuration (uses `{$VARNAME}` syntax)
 
 **Note:** If using CrowdSec, the init container will automatically update the rendered config.json with the correct API key, so no manual configuration is needed.
 
@@ -108,62 +100,33 @@ For advanced customization, you can manually edit the files before starting:
 # Edit the MeshCentral template
 nano meshcentral-data/config.json.template
 
-# Edit the Caddyfile directly
-nano caddy/Caddyfile
-
 # Re-render MeshCentral configuration
 ./render-config.sh
 ```
 
-### 5. Build the WAF Image
-
-The WAF service uses a **fully custom-built Docker image** (defined in `waf/Dockerfile`) based on `nginx:alpine`. It compiles **ModSecurity v3**, the **ModSecurity-nginx connector**, and the **OWASP Core Rule Set** entirely from source — no pre-built demo images or `owasp/modsecurity-crs` base image required.
+### 5. Start the Stack
 
 ```bash
-# Build the custom WAF image (required before first start)
-docker compose build waf
-```
-
-> **`waf/default.conf` or `waf/nginx.conf` changes require a rebuild** (`docker compose build waf && docker compose up -d waf`).
-> **`waf/modsecurity.conf` changes only need a restart** (`docker compose restart waf`) because the file is also bind-mounted at runtime, overriding the baked-in copy.
-
-### 6. (Optional) Build the Caddy Image
-
-> **Only needed if you want to use Caddy** instead of the default WAF (nginx + ModSecurity).
-> Caddy is built locally to include the Cloudflare DNS module (required for DNS-01 certificate challenges).
-
-```bash
-# Build the Caddy image with the Cloudflare DNS module
-docker compose build caddy
-```
-
-### 7. Start the Stack
-
-```bash
-# Start default stack (MeshCentral, MongoDB, WAF)
+# Start core stack (MeshCentral + MongoDB)
 docker compose up -d
 
-# Start with CrowdSec protection
-docker compose --profile crowdsec up -d
-
-# Start with Traefik instead of WAF (cloudflared → traefik → meshcentral)
-# NOTE: Do not run both traefik and waf on the same host ports at the same time.
+# Start with Traefik reverse proxy
 docker compose --profile traefik up -d
+
+# Start with Traefik + CrowdSec
+docker compose --profile traefik --profile crowdsec up -d
 
 # Start with Traefik + CrowdSec + Cloudflare Tunnel
 docker compose --profile traefik --profile crowdsec --profile cloudflare up -d
 
-# Start with Cloudflare Tunnel (cloudflared → waf → meshcentral)
-docker compose --profile cloudflare up -d
+# Start with Traefik + CrowdSec + Monitoring (Prometheus + Grafana)
+docker compose --profile traefik --profile crowdsec --profile monitoring up -d
 
-# Or combine CrowdSec and Cloudflare Tunnel
-docker compose --profile crowdsec --profile cloudflare up -d
-
-# Use Caddy instead of the WAF (alternative – not both at the same time on the same ports)
-docker compose --profile caddy up -d
+# Full stack (all profiles)
+docker compose --profile traefik --profile crowdsec --profile monitoring --profile cloudflare up -d
 ```
 
-### 8. Verify Installation
+### 6. Verify Installation
 
 ```bash
 # Check service status
@@ -176,7 +139,7 @@ docker compose logs -f meshcentral
 curl -I https://your-domain.com
 ```
 
-### 9. Access MeshCentral
+### 7. Access MeshCentral
 
 Open your browser and navigate to:
 ```
@@ -185,113 +148,13 @@ https://your-domain.com
 
 Create your first administrator account through the web interface.
 
-## 🌐 Caddy Cloudflare DNS Challenge Setup
-
-This stack uses Caddy with the Cloudflare DNS challenge for automatic HTTPS certificate issuance. This method is particularly useful when:
-- Your server is behind a firewall or NAT
-- You want to issue wildcard certificates
-- HTTP-01 challenge isn't feasible for your setup
-
-### Prerequisites
-
-1. A Cloudflare account with your domain added
-2. A Cloudflare API Token with DNS edit permissions
-
-### Creating a Cloudflare API Token
-
-1. Log in to the [Cloudflare Dashboard](https://dash.cloudflare.com/)
-2. Navigate to **My Profile** → **API Tokens**
-3. Click **Create Token**
-4. Use the **Edit zone DNS** template or create a custom token with these permissions:
-   - **Zone** → **DNS** → **Edit**
-   - **Zone** → **Zone** → **Read**
-5. Set the **Zone Resources** to include your domain
-6. Click **Continue to summary** → **Create Token**
-7. Copy the generated token immediately (it won't be shown again)
-
-### Configuring the API Token
-
-Add the token to your `.env` file:
-
-```bash
-CLOUDFLARE_API_TOKEN=your_cloudflare_dns_api_token_here
-```
-
-### How It Works
-
-When Caddy requests a certificate from Let's Encrypt:
-
-1. Let's Encrypt issues a DNS challenge
-2. Caddy uses your `CLOUDFLARE_API_TOKEN` to create a TXT record in your Cloudflare DNS
-3. Let's Encrypt verifies the TXT record
-4. Certificate is issued and automatically installed
-5. Caddy handles automatic renewal (typically every 60 days)
-
-The Cloudflare DNS challenge is configured in the Caddyfile (`caddy/Caddyfile`). The hostname and other variables are automatically substituted at runtime by Caddy using environment variables:
-
-```
-# In the Caddyfile:
-{$MESHCENTRAL_HOSTNAME} {
-  tls {
-    protocols tls1.2 tls1.3
-    dns cloudflare {$CLOUDFLARE_API_TOKEN}
-  }
-  # ... rest of configuration
-}
-
-# At runtime, Caddy automatically substitutes (e.g., if MESHCENTRAL_HOSTNAME=mesh.example.com):
-mesh.example.com {
-  tls {
-    protocols tls1.2 tls1.3
-    dns cloudflare <your_actual_token>
-  }
-  # ... rest of configuration
-}
-```
-
-Note: Caddy uses `{$VARNAME}` syntax for environment variable substitution at runtime.
-
-### Verification
-
-After starting the stack, verify certificate issuance:
-
-```bash
-# Check Caddy logs for certificate issuance
-docker compose logs caddy | grep -i "certificate"
-
-# Verify HTTPS is working
-curl -I https://your-domain.com
-
-# Check certificate details
-openssl s_client -connect your-domain.com:443 -servername your-domain.com < /dev/null | openssl x509 -noout -text
-```
-
-### Troubleshooting
-
-If certificate issuance fails:
-
-```bash
-# Check for API token errors
-docker compose logs caddy | grep -i "cloudflare"
-
-# Verify API token has correct permissions
-# - Token must have Zone:DNS:Edit and Zone:Zone:Read permissions
-# - Token must be scoped to the correct zone
-
-# Test DNS propagation
-dig TXT _acme-challenge.your-domain.com
-
-# Force certificate renewal
-docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
-```
-
 ## 🔧 Configuration Details
 
 ### Docker Compose Services
 
 #### MeshCentral
 - **Image**: `ghcr.io/ylianst/meshcentral:latest`
-- **Port**: 4430 (internal, proxied by Caddy)
+- **Port**: 4430 (internal, proxied by Traefik)
 - **Volumes**: 
   - `meshcentral-data`: Configuration and database
   - `meshcentral-files`: Uploaded files
@@ -307,30 +170,14 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
   - `mongodb-data`: Database files
   - `mongodb-config`: MongoDB configuration
 
-#### Caddy (Optional)
-- **Image**: `caddy:2-alpine`
-- **Profile**: `caddy` (must be explicitly enabled; alternative to the default WAF)
-- **Ports**: 
-  - 80 (HTTP, redirects to HTTPS)
-  - 443 (HTTPS)
-  - 2019 (Admin API, internal)
-- **Features**:
-  - Automatic HTTPS with Let's Encrypt using Cloudflare DNS challenge
-  - Supports wildcard certificates and servers behind NAT/firewalls
-  - WebSocket support for MeshCentral real-time connections
-  - CF-Connecting-IP forwarding for CrowdSec and accurate client IP logging
-  - Modern security headers (HSTS, CSP, X-Frame-Options)
-  - Response compression (gzip, zstd)
-  - JSON-formatted access logs with rotation
-
 #### Cloudflared (Optional)
 - **Image**: `cloudflare/cloudflared:latest`
 - **Profile**: `cloudflare` (must be explicitly enabled)
-- **Purpose**: Secure tunneling through Cloudflare network; connects to the Traefik (`traefik` profile) or WAF (`waf` service) in the frontend network
+- **Purpose**: Secure tunneling through Cloudflare network; connects to Traefik in the frontend network
 
 #### Traefik (Optional)
 - **Image**: `traefik:v3`
-- **Profile**: `traefik` (must be explicitly enabled; alternative to the default WAF)
+- **Profile**: `traefik` (must be explicitly enabled)
 - **Ports**:
   - `TRAEFIK_HTTP_PORT` (default 80)
   - `TRAEFIK_HTTPS_PORT` (default 443)
@@ -350,56 +197,41 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 - **Volumes**:
   - `traefik-logs`: Persists Traefik access logs; mounted read-only by CrowdSec for log analysis
 
-#### WAF – nginx + ModSecurity + OWASP CRS (Default reverse proxy)
-- **Build**: Custom image built from `waf/Dockerfile` (nginx:alpine base; ModSecurity v3, ModSecurity-nginx connector, and OWASP CRS compiled from source)
-- **Ports**: 80 (HTTP), 443 (HTTPS)
-- **Purpose**: Default reverse proxy; Web Application Firewall that inspects all HTTP traffic before it reaches MeshCentral
-- **Features**:
-  - ModSecurity v3 with OWASP Core Rule Set for broad HTTP attack detection
-  - Configurable engine mode: `DetectionOnly` for logging, `On` for active blocking
-  - WebSocket pass-through for MeshCentral agent connections
-  - JSON audit logging at `/var/log/nginx/modsec_audit.log`
-- **Configuration**:
-  - `waf/nginx.conf` – Main nginx config; loads the ModSecurity dynamic module. Copied into the image at build time.
-  - `waf/default.conf` – nginx reverse-proxy virtual-host config (upstream, ModSecurity, WebSocket, TLS). Copied into the image at build time.
-  - `waf/modsecurity.conf` – ModSecurity engine settings (engine mode, body limits, audit logging); copied into the image at build time **and** bind-mounted at runtime for easy overrides without rebuilding.
-  - `waf/setup.conf` – Loads `modsecurity.conf` + OWASP CRS rules; referenced by nginx via `modsecurity_rules_file`. Copied into the image at build time.
-- **Volumes**:
-  - `waf-logs`: Persists nginx/ModSecurity logs; mounted read-only by CrowdSec for log analysis
-
 #### CrowdSec (Optional)
 - **Image**: `crowdsecurity/crowdsec:latest`
 - **Profile**: `crowdsec` (must be explicitly enabled)
-- **Port**: 8080 (LAPI, internal only)
+- **Port**: 8080 (LAPI, internal only), 6060 (Prometheus metrics, internal only)
 - **Features**:
   - Automated bouncer key generation for MeshCentral and Traefik
   - Community-driven threat intelligence
   - Real-time IP reputation blocking
   - Log analysis from Traefik (`traefik-logs` volume, `crowdsecurity/traefik` collection)
-  - Log analysis from WAF (`waf-logs` volume)
+  - AppSec WAF-style HTTP inspection (port 7422)
 - **Volumes**:
   - `crowdsec-config`: CrowdSec configuration
   - `crowdsec-data`: Threat intelligence database
   - `traefik-logs`: Mounted read-only for Traefik access log analysis
-  - `waf-logs`: Mounted read-only for WAF log analysis
+
+#### Prometheus (Optional)
+- **Image**: `prom/prometheus:latest`
+- **Profile**: `monitoring` (must be explicitly enabled)
+- **Port**: 9090 (internal only)
+- **Purpose**: Collects metrics from Traefik (`:8082`) and CrowdSec (`:6060`) every 15 seconds
+- **Configuration**: `monitoring/prometheus.yml`
+
+#### Grafana (Optional)
+- **Image**: `grafana/grafana:latest`
+- **Profile**: `monitoring` (must be explicitly enabled)
+- **Purpose**: Pre-provisioned dashboard ("MeshCentral — Traffic & Security") visualising Traefik request metrics and CrowdSec protection metrics
+- **Access**: Routed through Traefik via `GRAFANA_HOSTNAME`
+- **Provisioning**:
+  - `monitoring/grafana/provisioning/datasources/prometheus.yml` – auto-wires Prometheus as a datasource
+  - `monitoring/grafana/provisioning/dashboards/default.yml` – auto-loads the dashboard
+  - `monitoring/grafana/dashboards/meshcentral-security.json` – the dashboard definition
 
 ### Network Architecture
 
-Default stack — WAF (nginx + ModSecurity + OWASP CRS) as reverse proxy:
-
-```
-Internet
-    ↓
-[Cloudflared (optional)]
-    ↓
-[WAF – nginx + ModSecurity + OWASP CRS] ← meshcentral-frontend (bridge)
-    ↓                                          ↓ (logs – waf-logs volume)
-[MeshCentral] ←────────────────────────→ [CrowdSec (optional, sidecar)]
-    ↓
-[MongoDB] ← meshcentral-backend (internal)
-```
-
-Alternative — Traefik as reverse proxy (profile: `traefik`):
+Traefik as reverse proxy (profile: `traefik`):
 
 ```
 Cloudflare Tunnel
@@ -413,16 +245,16 @@ Cloudflare Tunnel
 [MongoDB] ← meshcentral-backend (internal)
 ```
 
-Alternative — Caddy as reverse proxy (profile: `caddy`):
+With monitoring (profiles: `traefik` + `crowdsec` + `monitoring`):
 
 ```
-Internet
+Cloudflare Tunnel
     ↓
-[Cloudflared (optional)]
-    ↓
-[Caddy Reverse Proxy] ← meshcentral-frontend (bridge)
-    ↓                      ↓ (logs)
-[MeshCentral] ←────────→ [CrowdSec (optional)] ← meshcentral-backend (internal)
+[Traefik v3] ────────────────────────── metrics :8082 ──► [Prometheus]
+    ↓                                                            ↑
+[CrowdSec] ── metrics :6060 ─────────────────────────────────────┘
+    ↓                                                            ↓
+[MeshCentral]                                              [Grafana]  ← routed via Traefik (GRAFANA_HOSTNAME)
     ↓
 [MongoDB]
 ```
@@ -442,7 +274,7 @@ See `.env.example` for all available configuration options.
 
 ### Configuration Rendering Workflow
 
-This stack uses a **host-driven, template-based approach** with environment variable substitution for MeshCentral configuration. Caddy uses native runtime environment variable substitution.
+This stack uses a **host-driven, template-based approach** with environment variable substitution for MeshCentral configuration.
 
 #### MeshCentral Configuration
 
@@ -451,13 +283,6 @@ This stack uses a **host-driven, template-based approach** with environment vari
 3. **Rendering Script**: `render-config.sh` uses `envsubst` to substitute placeholders with actual values
 4. **Rendered Config**: `meshcentral-data/config.json` is generated with real values (excluded from git)
 5. **Docker Mount**: Only the rendered `config.json` is bind-mounted into the container (read-only)
-
-#### Caddyfile Configuration
-
-1. **Caddyfile**: `caddy/Caddyfile` contains the configuration with `{$VARNAME}` placeholders for Caddy's native substitution
-2. **Environment Variables**: Variables are defined in your `.env` file and passed via docker-compose.yml
-3. **Runtime Substitution**: Caddy automatically substitutes environment variables at runtime
-4. **Docker Mount**: The Caddyfile is directly bind-mounted into the container (read-only)
 
 **Workflow:**
 
@@ -469,8 +294,8 @@ nano .env
 # 2. Render MeshCentral configuration
 ./render-config.sh
 
-# 3. Start the stack (Caddy will automatically use environment variables)
-docker compose up -d
+# 3. Start the stack
+docker compose --profile traefik up -d
 ```
 
 **Important Notes:**
@@ -479,16 +304,11 @@ docker compose up -d
 - The template file (`config.json.template`) is tracked in git
 - The rendered file (`config.json`) is excluded from git and contains your actual values
 - The MeshCentral rendering script validates JSON output if `jq` is installed
-- The Caddyfile uses Caddy's native `{$VARNAME}` syntax for runtime substitution - no rendering needed
 
 **Template Variables:**
 
-All environment variables in `.env` can be used:
-- In MeshCentral template with `${VARNAME}` syntax (rendered by envsubst)
-- In Caddyfile with `{$VARNAME}` syntax (substituted by Caddy at runtime)
-
-Examples:
-- `${MESHCENTRAL_HOSTNAME}` or `{$MESHCENTRAL_HOSTNAME}` - Your domain name
+All environment variables in `.env` can be used in the MeshCentral template with `${VARNAME}` syntax (rendered by envsubst):
+- `${MESHCENTRAL_HOSTNAME}` - Your domain name
 - `${MONGO_DATABASE}` - MongoDB database name
 - `${MESHCENTRAL_DB_USER}` - Database user
 - `${MESHCENTRAL_DB_PASSWORD}` - Database password
@@ -501,9 +321,6 @@ To customize the configurations:
 ```bash
 # Edit the MeshCentral template
 nano meshcentral-data/config.json.template
-
-# Edit the Caddyfile directly
-nano caddy/Caddyfile
 
 # Re-render MeshCentral configuration
 ./render-config.sh
@@ -597,8 +414,8 @@ docker compose logs -f
 # Watch specific service
 docker compose logs -f meshcentral
 
-# Watch WAF access logs
-docker compose exec waf tail -f /var/log/nginx/access.log
+# Watch Traefik access logs
+docker compose exec traefik tail -f /var/log/traefik/access.log
 ```
 
 ## 🔌 Cloudflare Tunnel Setup
@@ -617,10 +434,8 @@ docker compose exec waf tail -f /var/log/nginx/access.log
 
 In the Cloudflare dashboard:
 - **Public hostname**: `mesh.example.com`
-- **Service (WAF default)**: `http://waf:80`
-- **Service (Traefik profile)**: `https://traefik:443` (uses Origin Certificate; set SSL/TLS to Full/Strict)
-- **TLS verification (WAF)**: TLS is terminated by Cloudflare; the WAF receives plain HTTP internally
-- **TLS verification (Traefik)**: Cloudflare verifies the Origin Certificate on Traefik (Full/Strict)
+- **Service**: `https://traefik:443` (uses Origin Certificate; set SSL/TLS to Full/Strict)
+- **TLS verification**: Cloudflare verifies the Origin Certificate on Traefik (Full/Strict)
 
 ### 3. Start with Cloudflare Profile
 
@@ -628,132 +443,9 @@ In the Cloudflare dashboard:
 docker compose --profile cloudflare up -d
 ```
 
-## 🛡️ WAF Setup (nginx + ModSecurity + OWASP CRS)
-
-The WAF service is the **default reverse proxy** for this stack. It sits in front of MeshCentral and inspects all HTTP(S) traffic using ModSecurity v3 with the OWASP Core Rule Set (CRS).
-
-**Traffic flow:**
-
-```
-cloudflared → waf (nginx + ModSecurity + OWASP CRS) → meshcentral
-```
-
-### Building the WAF Image
-
-The WAF is a **custom-built Docker image** defined in `waf/Dockerfile`. It is based on `nginx:alpine` and compiles the following entirely from source:
-
-- **ModSecurity v3** – the WAF engine library
-- **ModSecurity-nginx connector** – dynamic nginx module that links the engine to nginx
-- **OWASP Core Rule Set (CRS)** – the rule set used for HTTP attack detection
-
-All configuration files are copied directly into the image at build time:
-
-| File | Destination in image | Purpose |
-|---|---|---|
-| `waf/nginx.conf` | `/etc/nginx/nginx.conf` | Main nginx config; loads the dynamic ModSecurity module |
-| `waf/default.conf` | `/etc/nginx/conf.d/default.conf` | Reverse-proxy virtual-host config |
-| `waf/modsecurity.conf` | `/etc/modsecurity.d/modsecurity.conf` | ModSecurity engine settings |
-| `waf/setup.conf` | `/etc/modsecurity.d/setup.conf` | Loads modsecurity.conf + OWASP CRS rules |
-
-No entrypoint templating, `envsubst`, or `.template` files are used. All configs are static and directly readable/editable.
-
-```bash
-# Build the WAF image (required before first start)
-docker compose build waf
-```
-
-> **Rebuild after config changes** to `waf/default.conf` or `waf/nginx.conf`. For `waf/modsecurity.conf` changes,
-> a rebuild is optional — the file is also bind-mounted at runtime so a container restart is enough.
-
-### Starting the Stack with WAF
-
-The WAF starts automatically with `docker compose up -d` — no extra profile flag required:
-
-```bash
-# Start default stack (MongoDB + MeshCentral + WAF)
-docker compose up -d
-
-# Add Cloudflare Tunnel
-docker compose --profile cloudflare up -d
-
-# Add CrowdSec sidecar
-docker compose --profile crowdsec up -d
-```
-
-### Configuration
-
-The WAF configuration files are maintained as files in the repository and baked into the Docker image at build time.
-
-| File | Purpose | Update method |
-|---|---|---|
-| `waf/nginx.conf` | Main nginx config (loads the ModSecurity module) | Edit file → `docker compose build waf && docker compose up -d waf` |
-| `waf/default.conf` | nginx reverse-proxy virtual-host config (upstream, ModSecurity, WebSocket, TLS) | Edit file → `docker compose build waf && docker compose up -d waf` |
-| `waf/modsecurity.conf` | ModSecurity engine mode, body limits, audit logging | Edit file → `docker compose restart waf` (bind-mount overrides baked-in copy on restart) |
-| `waf/setup.conf` | Loads modsecurity.conf + OWASP CRS rules | Edit file → `docker compose build waf && docker compose up -d waf` |
-
-Port variables are still read from `.env`:
-
-| Variable (`.env`) | Default | Description |
-|---|---|---|
-| `WAF_HTTP_PORT` | `80` | Host HTTP port |
-| `WAF_HTTPS_PORT` | `443` | Host HTTPS port |
-
-### TLS / Certificate Handling
-
-When using **Cloudflare Tunnel** (`cloudflared → waf`), TLS is terminated by Cloudflare so the WAF only needs to handle HTTP internally — no certificate configuration is required.
-
-To **terminate TLS directly at the WAF** instead:
-
-1. Place your certificate and private key in `waf/ssl/`:
-   ```
-   waf/ssl/cert.pem   →  mounted at  /etc/nginx/ssl/cert.pem
-   waf/ssl/key.pem    →  mounted at  /etc/nginx/ssl/key.pem
-   ```
-2. Uncomment the certificate volume mounts in the `waf` service in `docker-compose.yml`:
-   ```yaml
-   volumes:
-     - ./waf/ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro
-     - ./waf/ssl/key.pem:/etc/nginx/ssl/key.pem:ro
-   ```
-
-### Tuning ModSecurity
-
-The engine starts in `DetectionOnly` mode (log only, no blocking). Once you have verified that legitimate traffic is not being flagged, switch to blocking mode:
-
-1. Update `waf/modsecurity.conf`:
-   ```
-   # Change this line:
-   SecRuleEngine DetectionOnly
-   # To:
-   SecRuleEngine On
-   ```
-
-2. Restart the WAF container to apply the change:
-
-```bash
-docker compose restart waf
-```
-
-### CrowdSec and WAF
-
-CrowdSec remains a sidecar and is not integrated directly into nginx. The `waf-logs` volume is already mounted into the CrowdSec container (read-only) so CrowdSec can analyse WAF access and audit logs automatically when the `crowdsec` profile is enabled.
-
-### Verifying WAF Operation
-
-```bash
-# Check WAF container status
-docker compose ps waf
-
-# View nginx access logs
-docker compose exec waf tail -f /var/log/nginx/access.log
-
-# View ModSecurity audit log
-docker compose exec waf tail -f /var/log/nginx/modsec_audit.log
-```
-
 ## 🚦 Traefik Reverse Proxy Setup
 
-Traefik is an optional reverse proxy that can be used **instead of the WAF** when you want Docker label-based service discovery, native CrowdSec bouncer plugin integration, and end-to-end HTTPS using a Cloudflare Origin Certificate.
+Traefik is the reverse proxy for this stack, providing Docker label-based service discovery, native CrowdSec bouncer plugin integration, and end-to-end HTTPS using a Cloudflare Origin Certificate.
 
 **Traffic flow (with Origin Certificate):**
 
@@ -770,11 +462,8 @@ Cloudflare (edge) ──HTTPS──► Traefik (Origin Cert, port 443) ──HTT
 **CrowdSec integration:**
 - Traefik writes **JSON access logs** to the `traefik-logs` volume — parsed by CrowdSec using the `crowdsecurity/traefik` collection
 - The **CrowdSec bouncer Traefik plugin** (`crowdsec-bouncer-traefik-plugin`) applies LAPI decisions as a middleware, blocking flagged IPs at the Traefik edge
-- The **CrowdSec AppSec component** listens on port 7422; the Traefik plugin forwards each request for WAF-style inspection using the `crowdsecurity/appsec-virtual-patching` and `crowdsecurity/appsec-generic-rules` collections
+- The **CrowdSec AppSec component** listens on port 7422; the Traefik plugin forwards each request for WAF-style inspection using the `crowdsecurity/appsec-default` config
 - The **MeshCentral CrowdSec bouncer** remains active for defence-in-depth
-
-> **⚠️ Port conflict**: Do **not** run both `traefik` and `waf` profiles at the same time using the same host ports (default `80`/`443`).  
-> Set `TRAEFIK_HTTP_PORT` / `TRAEFIK_HTTPS_PORT` to different values in `.env` if you need both running simultaneously.
 
 ### 1. Obtain a Cloudflare Origin Certificate
 
@@ -892,7 +581,7 @@ CrowdSec is an open-source security engine that analyzes visitor behavior and cr
 - **Persistent Configuration**: API key is stored securely with Docker volumes
 - **Flexible Integration**: Works with or without automation
 - **Threat Intelligence**: Blocks known malicious IPs based on community-driven threat intelligence
-- **AppSec (WAF)**: The CrowdSec AppSec component performs real-time HTTP request inspection using the `crowdsecurity/appsec-virtual-patching` and `crowdsecurity/appsec-generic-rules` rulesets, providing protection against known CVEs and generic web attacks without requiring a separate WAF service
+- **AppSec (WAF)**: The CrowdSec AppSec component performs real-time HTTP request inspection using the `crowdsecurity/appsec-default` config, providing protection against known CVEs and generic web attacks without requiring a separate WAF service
 
 ### Quick Start (Automated)
 
@@ -1095,6 +784,74 @@ docker compose up -d
 # Remove CrowdSec configuration from config.json if desired
 ```
 
+## 📈 Prometheus + Grafana Monitoring
+
+The `monitoring` profile adds Prometheus and Grafana to the stack and requires **both** `traefik` and `crowdsec` profiles to be active for metrics to flow.
+
+### Starting the Monitoring Stack
+
+```bash
+docker compose --profile traefik --profile crowdsec --profile monitoring up -d
+```
+
+### Environment Variables
+
+Add these to your `.env` file (see `.env.example`):
+
+| Variable | Required | Description |
+|---|---|---|
+| `GRAFANA_HOSTNAME` | Yes | Public hostname for Grafana (e.g. `grafana.example.com`). Routed via Traefik. |
+| `GRAFANA_ADMIN_USER` | No | Grafana admin username (default: `admin`) |
+| `GRAFANA_ADMIN_PASSWORD` | Yes | Grafana admin password |
+
+> **Note**: `GRAFANA_HOSTNAME` and `GRAFANA_ADMIN_PASSWORD` are required — the stack will fail to start with a clear error if either is unset.
+
+### Cloudflare Tunnel Configuration
+
+Add a third public hostname in the Cloudflare Zero Trust Tunnel settings:
+
+| Public hostname | Service URL | Purpose |
+|---|---|---|
+| `grafana.example.com` | `https://traefik:443` | Grafana dashboard |
+
+> **Recommended**: Protect with a Cloudflare Access policy to restrict access.
+
+### Dashboard Panels
+
+The pre-provisioned **"MeshCentral — Traffic & Security"** dashboard includes:
+
+| Panel | Metric |
+|---|---|
+| Requests last hour | `traefik_entrypoint_requests_total` |
+| Active bans | `cs_active_decisions{type="ban"}` |
+| 5xx error rate | rate ratio |
+| Request rate by status (2xx/3xx/4xx/5xx) | timeseries |
+| Response time p50/p95/p99 | `traefik_service_request_duration_seconds_bucket` |
+| CrowdSec active decisions | `cs_active_decisions` by type |
+| CrowdSec alert scenarios | `cs_alerts_count` per scenario |
+
+### Configuration Files
+
+| File | Purpose |
+|---|---|
+| `monitoring/prometheus.yml` | Prometheus scrape config (Traefik `:8082`, CrowdSec `:6060`) |
+| `monitoring/grafana/provisioning/datasources/prometheus.yml` | Auto-provisions Prometheus as Grafana datasource |
+| `monitoring/grafana/provisioning/dashboards/default.yml` | Dashboard loader config |
+| `monitoring/grafana/dashboards/meshcentral-security.json` | "MeshCentral — Traffic & Security" dashboard |
+
+### Verifying Monitoring Operation
+
+```bash
+# Check Prometheus targets
+docker compose exec prometheus wget -qO- http://localhost:9090/api/v1/targets | jq .
+
+# Check Grafana health
+docker compose exec grafana wget --no-verbose --tries=1 --spider http://localhost:3000/api/health
+
+# View Grafana logs
+docker compose logs grafana
+```
+
 ## 🔍 Troubleshooting
 
 ### Service Won't Start
@@ -1120,11 +877,11 @@ docker compose exec meshcentral ping mongodb
 ### Certificate Issues
 
 ```bash
-# Check Caddy logs
-docker compose logs caddy
+# Check Traefik logs
+docker compose logs traefik
 
-# Force certificate renewal
-docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+# Verify Origin Certificate files exist
+ls -la traefik/ssl/
 ```
 
 ### Permission Denied Errors
@@ -1186,14 +943,18 @@ docker compose exec meshcentral npm outdated
 - **MeshCentral Forum**: https://www.reddit.com/r/MeshCentral/
 - **GitHub Issues**: https://github.com/Ylianst/MeshCentral/issues
 - **Docker Documentation**: https://docs.docker.com/
-- **Caddy Documentation**: https://caddyserver.com/docs/
+- **Traefik Documentation**: https://doc.traefik.io/traefik/
+- **CrowdSec Documentation**: https://docs.crowdsec.net/
+- **Grafana Documentation**: https://grafana.com/docs/
 
 ## 📝 License
 
 This Docker stack configuration is provided as-is. Please refer to individual component licenses:
 - MeshCentral: Apache License 2.0
 - MongoDB: SSPL
-- Caddy: Apache License 2.0
+- Traefik: MIT License
+- CrowdSec: MIT License
+- Grafana: AGPL-3.0
 - Cloudflared: Apache License 2.0
 
 ## 🤝 Contributing

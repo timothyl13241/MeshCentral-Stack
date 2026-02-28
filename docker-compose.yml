@@ -47,8 +47,6 @@ services:
       - crowdsec-data:/var/lib/crowdsec/data
       # Mount Traefik access logs for analysis (crowdsecurity/traefik collection)
       - traefik-logs:/var/log/traefik:ro
-      # Mount WAF logs for analysis (when using the waf profile)
-      - waf-logs:/var/log/nginx:ro
       # Custom log acquisition rules (adds Traefik log source and AppSec component)
       - ./crowdsec/acquis.d:/etc/crowdsec/acquis.d:ro
     networks:
@@ -103,7 +101,7 @@ services:
       # Hostname configuration
       HOSTNAME: ${MESHCENTRAL_HOSTNAME}
       # Reverse proxy settings
-      REVERSE_PROXY: ${REVERSE_PROXY:-nginx}
+      REVERSE_PROXY: ${REVERSE_PROXY:-traefik}
       REVERSE_PROXY_TLS_PORT: ${REVERSE_PROXY_TLS_PORT:-443}
       # MongoDB connection
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
@@ -145,53 +143,7 @@ services:
       retries: 3
       start_period: 60s
 
-  # WAF – nginx + ModSecurity + OWASP CRS (default reverse proxy)
-  # Traffic flow: cloudflared → waf → meshcentral
-  # Built from waf/Dockerfile (nginx:alpine base; ModSecurity v3, ModSecurity-nginx
-  # connector, and OWASP CRS compiled from source).
-  # nginx config (waf/default.conf) and ModSecurity settings (waf/modsecurity.conf)
-  # are copied into the image at build time.
-  # Rebuild after config changes: docker compose build waf
-  waf:
-    build:
-      context: ./waf
-      dockerfile: Dockerfile
-    container_name: meshcentral-waf
-    restart: unless-stopped
-    depends_on:
-      meshcentral:
-        condition: service_healthy
-    ports:
-      - "${WAF_HTTP_PORT:-80}:80"
-      - "${WAF_HTTPS_PORT:-443}:443"
-    volumes:
-      # ModSecurity engine settings (SecRuleEngine mode, body limits, audit logging).
-      # Baked into the image at build time; this bind-mount overrides the baked-in
-      # copy at runtime, so you can tune SecRuleEngine / limits with only a
-      # container restart instead of a full image rebuild.
-      - ./waf/modsecurity.conf:/etc/modsecurity.d/modsecurity.conf:ro
-      # Persist WAF logs; CrowdSec mounts this volume for log analysis
-      - waf-logs:/var/log/nginx
-      # TLS certificates for the HTTPS listener.
-      # Place your files in waf/ssl/ and uncomment when terminating TLS at the WAF:
-      # - ./waf/ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro
-      # - ./waf/ssl/key.pem:/etc/nginx/ssl/key.pem:ro
-    networks:
-      - meshcentral-frontend
-    # Health check verifies that the nginx process is accepting connections.
-    # End-to-end connectivity to MeshCentral is guaranteed at startup via
-    # depends_on (service_healthy on the meshcentral container).
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    profiles:
-      - waf # Only start when explicitly enabled
-
-  # Traefik Reverse Proxy (Optional – use instead of waf when Traefik-native routing,
-  # Docker label-based service discovery, and the CrowdSec bouncer plugin are preferred)
+  # Traefik Reverse Proxy
   # Traffic flow: Cloudflare Tunnel → Traefik (Origin Cert, HTTPS/443) → MeshCentral
   # TLS:
   #   - Cloudflare Origin Certificate is mounted at /etc/traefik/ssl/ (traefik/ssl/)
@@ -201,9 +153,7 @@ services:
   # CrowdSec integration:
   #   - Traefik writes JSON access logs consumed by CrowdSec (crowdsecurity/traefik)
   #   - CrowdSec bouncer plugin middleware blocks flagged IPs at the Traefik layer
-  #   - MeshCentral bouncer also remains active for defence-in-depth
-  # NOTE: Do not run both traefik and waf at the same time on the same host ports.
-  #       Change TRAEFIK_HTTP_PORT / TRAEFIK_HTTPS_PORT in .env if needed.
+  #   - AppSec component provides WAF-style request inspection via port 7422
   traefik:
     image: traefik:v3
     container_name: meshcentral-traefik
@@ -239,40 +189,71 @@ services:
     profiles:
       - traefik  # Only start when explicitly enabled
 
-  # Caddy Reverse Proxy (Optional – use instead of waf when automatic HTTPS via
-  # Let's Encrypt / Cloudflare DNS challenge is preferred over nginx+ModSecurity)
-  caddy:
-    build:
-      context: ./caddy
-      dockerfile: Dockerfile
-    container_name: meshcentral-caddy
+  # Prometheus – scrapes Traefik (:8082/metrics) and CrowdSec (:6060/metrics).
+  # Start with: docker compose --profile monitoring up -d
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: meshcentral-prometheus
     restart: unless-stopped
-    depends_on:
-      meshcentral:
-        condition: service_healthy
-    ports:
-      - "${CADDY_HTTP_PORT:-80}:80"
-      - "${CADDY_HTTPS_PORT:-443}:443"
-      - "${CADDY_ADMIN_PORT:-2019}:2019"
-    environment:
-      ACME_EMAIL: ${ACME_EMAIL}
-      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
-      MESHCENTRAL_HOSTNAME: ${MESHCENTRAL_HOSTNAME}
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
     volumes:
-      # Caddyfile with environment variable substitution
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
     networks:
       - meshcentral-frontend
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:2019/config/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 15s
     profiles:
-      - caddy  # Only start when explicitly enabled
+      - monitoring
+
+  # Grafana – pre-provisioned with a Prometheus datasource and a combined
+  # Traefik + CrowdSec metrics dashboard.
+  # Accessible via Traefik on GRAFANA_HOSTNAME (set in .env).
+  grafana:
+    image: grafana/grafana:latest
+    container_name: meshcentral-grafana
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SERVER_ROOT_URL: "https://${GRAFANA_HOSTNAME:?set GRAFANA_HOSTNAME in .env}"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    labels:
+      # Traefik routing – accessible on its own public hostname via Cloudflare Tunnel.
+      # Protect with a Cloudflare Access policy (recommended).
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`${GRAFANA_HOSTNAME}`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls=true"
+      - "traefik.http.routers.grafana.middlewares=crowdsec@file"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      - "traefik.docker.network=meshcentral-frontend"
+    networks:
+      - meshcentral-frontend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    profiles:
+      - monitoring
 
   # Cloudflared Tunnel (Optional - remove if not using Cloudflare Tunnel)
   cloudflared:
@@ -280,12 +261,9 @@ services:
     container_name: meshcentral-cloudflared
     restart: unless-stopped
     depends_on:
-      waf:
-        condition: service_healthy
-        required: false  # Not required when using the traefik profile instead
       traefik:
         condition: service_healthy
-        required: false  # Not required when using the waf profile instead
+        required: false  # Optional – only needed when using the traefik profile
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
     networks:
       - meshcentral-frontend
@@ -318,15 +296,13 @@ volumes:
     driver: local
   meshcentral-web:
     driver: local
-  caddy-data:
-    driver: local
-  caddy-config:
-    driver: local
   crowdsec-config:
     driver: local
   crowdsec-data:
     driver: local
-  waf-logs:
-    driver: local
   traefik-logs:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
     driver: local

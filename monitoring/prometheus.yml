@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Traefik exposes Prometheus metrics on the internal entrypoint (port 8082).
+  # addEntryPointsLabels, addRoutersLabels, and addServicesLabels are enabled in
+  # traefik.yml so all three label sets appear on request metrics.
+  - job_name: traefik
+    static_configs:
+      - targets: ['traefik:8082']
+
+  # CrowdSec exposes Prometheus metrics on port 6060 when METRICS_ENABLED=true.
+  - job_name: crowdsec
+    static_configs:
+      - targets: ['crowdsec:6060']
