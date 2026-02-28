@@ -58,6 +58,7 @@ entryPoints:
       # Trust Cloudflare proxy IPs so the real client IP is forwarded correctly.
       # See: https://www.cloudflare.com/ips/
       trustedIPs:
+        - "172.19.0.0/16"
         - "173.245.48.0/20"
         - "103.21.244.0/22"
         - "103.22.200.0/22"
@@ -86,6 +87,7 @@ entryPoints:
       # Trust Cloudflare proxy IPs so the real client IP is forwarded correctly.
       # See: https://www.cloudflare.com/ips/
       trustedIPs:
+        - "172.19.0.0/16"
         - "173.245.48.0/20"
         - "103.21.244.0/22"
         - "103.22.200.0/22"
