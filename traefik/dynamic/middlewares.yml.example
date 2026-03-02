@@ -28,6 +28,21 @@ http:
           crowdsecAppsecFailureBlock: false
           crowdsecAppsecUnreachableBlock: false
 
+    # OWASP ModSecurity WAF middleware (optional).
+    # Requires the modsecurity profile:
+    #   docker compose --profile modsecurity up -d
+    # After enabling, add 'modsecurity@file' to the router middleware chain in
+    # docker-compose.yml (e.g. "crowdsec@file,modsecurity@file") and restart Traefik.
+    # Paranoia level and anomaly thresholds are configured via MODSECURITY_PARANOIA,
+    # MODSECURITY_ANOMALY_INBOUND, and MODSECURITY_ANOMALY_OUTBOUND in .env.
+    #
+    # modsecurity:
+    #   plugin:
+    #     traefik-modsecurity-plugin:
+    #       modSecurityUrl: http://modsecurity-waf:8080
+    #       timeoutMillis: 2000
+    #       maxBodySize: 10485760
+
     # HTTP → HTTPS permanent redirect
     redirect-to-https:
       redirectScheme:

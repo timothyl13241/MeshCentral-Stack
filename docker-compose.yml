@@ -187,6 +187,50 @@ services:
       retries: 3
       start_period: 15s
 
+  # OWASP ModSecurity WAF (Optional - profile: modsecurity)
+  # Provides deep HTTP request inspection using the OWASP Core Rule Set (CRS).
+  # Works as a Traefik plugin middleware: Traefik forwards each request to this
+  # container for inspection before proxying to MeshCentral.
+  # To enable: docker compose --profile modsecurity up -d
+  # Then uncomment the 'modsecurity' middleware in traefik/dynamic/middlewares.yml.example
+  # and add 'modsecurity@file' to the router middleware chain in docker-compose.yml.
+  modsecurity-waf:
+    image: owasp/modsecurity-crs:apache
+    container_name: meshcentral-modsecurity-waf
+    restart: unless-stopped
+    environment:
+      # BACKEND must point to modsecurity-dummy so requests that pass CRS rules
+      # receive a 200 OK response (required by the Traefik plugin).
+      BACKEND: "http://modsecurity-dummy"
+      # CRS paranoia level (1-4). Levels above 1 may block legitimate MeshCentral
+      # agent connections (WebSocket/binary traffic) — start at 1 and test before raising.
+      PARANOIA: "${MODSECURITY_PARANOIA:-1}"
+      # Inbound/outbound anomaly score thresholds (lower = stricter).
+      ANOMALY_INBOUND: "${MODSECURITY_ANOMALY_INBOUND:-10}"
+      ANOMALY_OUTBOUND: "${MODSECURITY_ANOMALY_OUTBOUND:-5}"
+    networks:
+      - meshcentral-frontend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    profiles:
+      - modsecurity
+
+  # Dummy backend for ModSecurity WAF.
+  # Always returns 200 OK; allows the WAF to pass inspected requests back to Traefik
+  # without routing them to MeshCentral (the Traefik plugin handles actual proxying).
+  modsecurity-dummy:
+    image: traefik/whoami
+    container_name: meshcentral-modsecurity-dummy
+    restart: unless-stopped
+    networks:
+      - meshcentral-frontend
+    profiles:
+      - modsecurity
+
   # Prometheus – scrapes Traefik (:8082/metrics) and CrowdSec (:6060/metrics).
   # Placed on both meshcentral-monitoring (isolated backend) and meshcentral-frontend
   # so it can reach Traefik and CrowdSec metrics endpoints on the frontend network.
