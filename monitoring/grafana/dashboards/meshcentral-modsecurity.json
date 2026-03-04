@@ -1,0 +1,371 @@
+{
+  "uid": "meshcentral-modsecurity",
+  "title": "MeshCentral \u2014 ModSecurity WAF",
+  "description": "OWASP ModSecurity CRS metrics for the MeshCentral stack. Requires both the 'monitoring' and 'modsecurity' Docker Compose profiles to be active.",
+  "schemaVersion": 38,
+  "version": 1,
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "refresh": "30s",
+  "tags": [
+    "modsecurity",
+    "waf",
+    "meshcentral"
+  ],
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "hide": 2,
+        "name": "DS_LOKI",
+        "query": "loki",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "WAF Blocks \u2014 Last Hour",
+      "type": "stat",
+      "description": "Total number of requests blocked by ModSecurity in the past hour.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"modsec-audit\", http_code=\"403\"} [1h]))",
+          "legendFormat": "Blocked",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Audit Events \u2014 Last Hour",
+      "type": "stat",
+      "description": "Total requests that triggered at least one CRS rule in the past hour (blocked + inspected). A request is audited whenever any rule fires, even if the anomaly score does not exceed the blocking threshold.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"modsec-audit\"} [1h]))",
+          "legendFormat": "Audit Events",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Block Rate \u2014 Last 5m",
+      "type": "stat",
+      "description": "Average number of ModSecurity-blocked requests per minute over the last 5 minutes.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "dark-red"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "dark-red",
+                "value": null
+              }
+            ]
+          },
+          "unit": "reqpm",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate({job=\"modsec-audit\", http_code=\"403\"} [5m])) * 60",
+          "legendFormat": "Blocks/min",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "WAF Activity Over Time",
+      "type": "timeseries",
+      "description": "Rate of requests blocked (403) versus all requests that triggered a CRS rule (audit events), evaluated in 5-minute windows.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"modsec-audit\", http_code=\"403\"} [$__interval]))",
+          "legendFormat": "Blocked (403)",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(count_over_time({job=\"modsec-audit\", http_code!=\"403\"} [$__interval]))",
+          "legendFormat": "Inspected (passed)",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Top Blocked IPs",
+      "type": "bargauge",
+      "description": "Top 10 client IP addresses generating blocked (403) WAF responses within the selected timeframe.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"modsec-audit\", http_code=\"403\"} | json client_ip=\"transaction.client_ip\" | client_ip != \"\" [$__range])))",
+          "legendFormat": "{{client_ip}}",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Top Blocked URIs",
+      "type": "bargauge",
+      "description": "Top 10 request URIs that were blocked by ModSecurity within the selected timeframe.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (uri) (count_over_time({job=\"modsec-audit\", http_code=\"403\"} | json uri=\"transaction.request.uri\" | uri != \"\" [$__range])))",
+          "legendFormat": "{{uri}}",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ]
+    }
+  ]
+}
