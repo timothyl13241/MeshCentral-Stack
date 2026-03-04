@@ -215,6 +215,13 @@ services:
       # privileges or chown workaround is needed in any container.
       MODSEC_AUDIT_LOG: /var/log/apache2/audit.log
       MODSEC_AUDIT_LOG_FORMAT: JSON
+      # Real client IP forwarding: Traefik connects from the meshcentral-frontend
+      # network (172.19.0.0/16) and passes the original client IP in X-Forwarded-For.
+      # These settings configure Apache mod_remoteip to trust that subnet so
+      # ModSecurity evaluates and logs the real client IP rather than Traefik's
+      # internal Docker IP.
+      REAL_IP_HEADER: "X-Forwarded-For"
+      REAL_IP_TRUSTED_PROXY: "172.19.0.0/16"
     volumes:
       - modsec-logs:/var/log/apache2
     networks:
