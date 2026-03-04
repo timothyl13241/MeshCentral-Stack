@@ -617,6 +617,244 @@
           "queryType": "instant"
         }
       ]
+    },
+    {
+      "id": 11,
+      "title": "ModSecurity WAF",
+      "type": "row",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 12,
+      "title": "ModSec Blocks \u2014 Last Hour",
+      "type": "stat",
+      "description": "Total requests blocked by ModSecurity in the past hour. Requires the modsecurity profile to be active.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 29
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"modsec-audit\", http_code=\"403\"} [1h]))",
+          "legendFormat": "WAF Blocks",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "ModSec Audit Events \u2014 Last Hour",
+      "type": "stat",
+      "description": "Requests that triggered at least one CRS rule in the past hour (blocked and inspected). Requires the modsecurity profile to be active.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 29
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"modsec-audit\"} [1h]))",
+          "legendFormat": "Audit Events",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "ModSec Block Rate \u2014 Last 5m",
+      "type": "stat",
+      "description": "Average WAF block rate per minute over the last 5 minutes. Requires the modsecurity profile to be active.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 29
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "dark-red"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "dark-red",
+                "value": null
+              }
+            ]
+          },
+          "unit": "reqpm",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate({job=\"modsec-audit\", http_code=\"403\"} [5m])) * 60",
+          "legendFormat": "Blocks/min",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "ModSec Blocks Over Time",
+      "type": "timeseries",
+      "description": "Rate of ModSecurity-blocked requests over time, evaluated per interval. Requires the modsecurity profile to be active.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"modsec-audit\", http_code=\"403\"} [$__interval]))",
+          "legendFormat": "Blocked (403)",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(count_over_time({job=\"modsec-audit\", http_code!=\"403\"} [$__interval]))",
+          "legendFormat": "Inspected (passed)",
+          "refId": "B"
+        }
+      ]
     }
   ],
   "refresh": "30s",
@@ -624,6 +862,7 @@
   "tags": [
     "traefik",
     "crowdsec",
+    "modsecurity",
     "meshcentral"
   ],
   "templating": {
@@ -652,5 +891,5 @@
   "timezone": "browser",
   "title": "MeshCentral \u2014 Traffic & Security",
   "uid": "meshcentral-security",
-  "version": 2
+  "version": 3
 }

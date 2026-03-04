@@ -208,6 +208,13 @@ services:
       # Inbound/outbound anomaly score thresholds (lower = stricter).
       ANOMALY_INBOUND: "${MODSECURITY_ANOMALY_INBOUND:-10}"
       ANOMALY_OUTBOUND: "${MODSECURITY_ANOMALY_OUTBOUND:-5}"
+      # Write ModSecurity audit log to a named volume so Promtail can ship it to Loki.
+      # Set format to JSON for structured log parsing in the Grafana dashboard.
+      MODSEC_AUDIT_LOG: /var/log/modsec/audit.log
+      MODSEC_AUDIT_LOG_FORMAT: JSON
+      MODSEC_AUDIT_LOG_TYPE: Serial
+    volumes:
+      - modsec-logs:/var/log/modsec
     networks:
       - meshcentral-frontend
     healthcheck:
@@ -294,6 +301,8 @@ services:
       - ./monitoring/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
       # Mount the same Traefik access log volume that CrowdSec also reads
       - traefik-logs:/var/log/traefik:ro
+      # Mount the ModSecurity audit log volume (populated when the modsecurity profile is active)
+      - modsec-logs:/var/log/modsec:ro
     networks:
       - meshcentral-monitoring
     depends_on:
@@ -409,4 +418,6 @@ volumes:
   loki-data:
     driver: local
   grafana-data:
+    driver: local
+  modsec-logs:
     driver: local

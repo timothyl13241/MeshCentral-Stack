@@ -31,3 +31,37 @@ scrape_configs:
             status: DownstreamStatus
       - labels:
           status:
+
+  # ModSecurity WAF audit log (populated when the modsecurity profile is active).
+  # Each line is a JSON object describing a request that triggered at least one CRS
+  # rule or was blocked.  The http_code label enables efficient stream selection so
+  # dashboard queries can filter for blocked (403) vs. inspected-but-passed requests
+  # without scanning every log line.
+  - job_name: modsec-audit
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: modsec-audit
+          __path__: /var/log/modsec/audit.log
+    pipeline_stages:
+      # Extract the HTTP response code from the nested JSON structure.
+      # Step 1: pull the top-level "transaction" object into the extracted map.
+      - json:
+          expressions:
+            txn: transaction
+      # Step 2: pull "response" out of the transaction object.
+      - json:
+          source: txn
+          expressions:
+            rsp: response
+      # Step 3: extract the numeric http_code from the response object.
+      - json:
+          source: rsp
+          expressions:
+            http_code: http_code
+      # Promote http_code to a Loki label for stream selection.
+      # All other fields (client_ip, uri, rule messages) stay in the raw log line
+      # for query-time extraction via | json to keep label cardinality low.
+      - labels:
+          http_code:
