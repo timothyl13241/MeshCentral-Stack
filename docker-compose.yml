@@ -125,14 +125,14 @@ services:
       - "traefik.http.routers.meshcentral.rule=Host(`${MESHCENTRAL_HOSTNAME}`)"
       - "traefik.http.routers.meshcentral.entrypoints=websecure"
       - "traefik.http.routers.meshcentral.tls=true"
-      - "traefik.http.routers.meshcentral.middlewares=crowdsec@file"
+      - "traefik.http.routers.meshcentral.middlewares=crowdsec@file,modsecurity@file"
       - "traefik.http.services.meshcentral.loadbalancer.server.port=4430"
       - "traefik.http.services.meshcentral.loadbalancer.server.scheme=http"
       - "traefik.docker.network=meshcentral-frontend"
       # HTTP router – redirect to HTTPS, also gated by CrowdSec
       - "traefik.http.routers.meshcentral-http.rule=Host(`${MESHCENTRAL_HOSTNAME}`)"
       - "traefik.http.routers.meshcentral-http.entrypoints=web"
-      - "traefik.http.routers.meshcentral-http.middlewares=redirect-to-https@file,crowdsec@file"
+      - "traefik.http.routers.meshcentral-http.middlewares=redirect-to-https@file,crowdsec@file,modsecurity@file"
     networks:
       - meshcentral-backend
       - meshcentral-frontend
@@ -332,7 +332,7 @@ services:
       - "traefik.http.routers.grafana.rule=Host(`${GRAFANA_HOSTNAME}`)"
       - "traefik.http.routers.grafana.entrypoints=websecure"
       - "traefik.http.routers.grafana.tls=true"
-      - "traefik.http.routers.grafana.middlewares=crowdsec@file"
+      - "traefik.http.routers.grafana.middlewares=crowdsec@file,modsecurity@file"
       - "traefik.http.services.grafana.loadbalancer.server.port=3000"
       - "traefik.docker.network=meshcentral-frontend"
     networks:
