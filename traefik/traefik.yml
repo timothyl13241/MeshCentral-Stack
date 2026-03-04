@@ -143,3 +143,10 @@ experimental:
     crowdsec-bouncer:
       moduleName: "github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin"
       version: "v1.3.5"
+    # OWASP ModSecurity WAF plugin (optional – profile: modsecurity).
+    # Proxies each request to the modsecurity-waf container for inspection;
+    # requests blocked by CRS rules receive a 403 before reaching MeshCentral.
+    # Middleware is configured in dynamic/middlewares.yml.example.
+    traefik-modsecurity-plugin:
+      moduleName: "github.com/acouvreur/traefik-modsecurity-plugin"
+      version: "v1.3.0"

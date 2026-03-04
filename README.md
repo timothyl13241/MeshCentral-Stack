@@ -8,6 +8,7 @@ A secure, production-ready Docker Compose stack for [MeshCentral](https://meshce
 - **MongoDB**: Persistent database with required authentication and optional encryption-at-rest capability
 - **Traefik**: Reverse proxy with Docker label-based routing and CrowdSec bouncer plugin (`cloudflared → traefik → meshcentral`, profile: `traefik`)
 - **CrowdSec**: Optional automated intrusion prevention system with community-driven threat intelligence and AppSec WAF inspection (profile: `crowdsec`)
+- **ModSecurity**: Optional OWASP Core Rule Set (CRS) Web Application Firewall; inspects request content for SQLi, XSS, and other attack patterns as a Traefik middleware (profile: `modsecurity`)
 - **Prometheus**: Optional metrics collection — scrapes Traefik and CrowdSec endpoints (profile: `monitoring`)
 - **Grafana**: Optional dashboard — pre-provisioned with a "MeshCentral — Traffic & Security" dashboard (profile: `monitoring`)
 - **Cloudflared**: Optional Cloudflare Tunnel integration for enhanced security and zero-trust access (profile: `cloudflare`)
@@ -19,6 +20,7 @@ A secure, production-ready Docker Compose stack for [MeshCentral](https://meshce
 - **Encrypted Storage Ready**: MongoDB configured for encryption-at-rest capability
 - **Traefik Reverse Proxy**: Container label-based routing with CrowdSec bouncer plugin for IP blocking
 - **CrowdSec AppSec**: WAF-style HTTP request inspection via the CrowdSec AppSec component (no separate WAF service needed)
+- **OWASP ModSecurity CRS**: Optional deep request inspection WAF using the OWASP Core Rule Set as a Traefik middleware (profile: `modsecurity`)
 - **Security Headers**: HSTS, CSP, X-Frame-Options, and more (add to Traefik dynamic config as required)
 - **Real IP Preservation**: Proper forwarding of client IP through the proxy chain for accurate logging and rate limiting
 - **Password Policies**: Enforced strong password requirements
@@ -116,6 +118,9 @@ docker compose --profile traefik up -d
 # Start with Traefik + CrowdSec
 docker compose --profile traefik --profile crowdsec up -d
 
+# Start with Traefik + CrowdSec + OWASP ModSecurity WAF
+docker compose --profile traefik --profile crowdsec --profile modsecurity up -d
+
 # Start with Traefik + CrowdSec + Cloudflare Tunnel
 docker compose --profile traefik --profile crowdsec --profile cloudflare up -d
 
@@ -123,7 +128,7 @@ docker compose --profile traefik --profile crowdsec --profile cloudflare up -d
 docker compose --profile traefik --profile crowdsec --profile monitoring up -d
 
 # Full stack (all profiles)
-docker compose --profile traefik --profile crowdsec --profile monitoring --profile cloudflare up -d
+docker compose --profile traefik --profile crowdsec --profile modsecurity --profile monitoring --profile cloudflare up -d
 ```
 
 ### 6. Verify Installation
@@ -528,7 +533,7 @@ Both hostnames route to `https://traefik:443`. Traefik differentiates them by `H
 
 | File | Purpose |
 |---|---|
-| `traefik/traefik.yml` | Static config: entrypoints (80/443/8082), Docker/file providers, access log, CrowdSec plugin |
+| `traefik/traefik.yml` | Static config: entrypoints (80/443/8082), Docker/file providers, access log, CrowdSec & ModSecurity plugins |
 | `traefik/dynamic/tls.yml` | TLS store: sets the Cloudflare Origin Certificate as the default cert for `websecure` |
 | `traefik/dynamic/middlewares.yml.example` | Template for CrowdSec bouncer middleware + dashboard router (tracked in git) |
 | `traefik/dynamic/middlewares.yml` | Rendered dynamic config (git-ignored; created by `render-config.sh`) |
@@ -782,6 +787,105 @@ To run the stack without CrowdSec protection:
 docker compose up -d
 
 # Remove CrowdSec configuration from config.json if desired
+```
+
+## 🔰 OWASP ModSecurity WAF
+
+The `modsecurity` profile adds an OWASP ModSecurity Core Rule Set (CRS) Web Application Firewall to the Traefik middleware chain. It works alongside CrowdSec: CrowdSec blocks known-bad IPs while ModSecurity inspects each request body and headers for attack patterns (SQLi, XSS, path traversal, and more).
+
+### How It Works
+
+Traefik's `traefik-modsecurity-plugin` (registered in `traefik/traefik.yml`) proxies a copy of each incoming request to the ModSecurity WAF container. If ModSecurity's CRS rules flag the request (returning HTTP ≥ 400), Traefik blocks it before it reaches MeshCentral. A lightweight dummy backend (`traefik/whoami`) ensures that requests **passing** inspection always receive a 200 OK response back to the plugin.
+
+```
+Cloudflare Tunnel
+    ↓
+[Traefik v3]
+    ↓  (crowdsec@file middleware)    → [CrowdSec LAPI] (IP reputation)
+    ↓  (modsecurity@file middleware) → [ModSecurity WAF] (request inspection)
+    ↓
+[MeshCentral]
+```
+
+### Starting the ModSecurity Stack
+
+```bash
+# Start Traefik + ModSecurity WAF
+docker compose --profile modsecurity up -d
+```
+
+### Enabling the Middleware
+
+**1. Uncomment the middleware** in `traefik/dynamic/middlewares.yml.example`:
+
+```yaml
+    modsecurity:
+      plugin:
+        traefik-modsecurity-plugin:
+          modSecurityUrl: http://modsecurity-waf:8080
+          timeoutMillis: 2000
+          maxBodySize: 10485760
+```
+
+Re-render the Traefik dynamic config:
+
+```bash
+./render-config.sh
+```
+
+**2. Add `modsecurity@file` to the MeshCentral router middleware chain** in `docker-compose.yml`:
+
+```yaml
+    labels:
+      - "traefik.http.routers.meshcentral.middlewares=crowdsec@file,modsecurity@file"
+      - "traefik.http.routers.meshcentral-http.middlewares=redirect-to-https@file,crowdsec@file,modsecurity@file"
+```
+
+Restart Traefik and MeshCentral to apply:
+
+```bash
+docker compose restart traefik meshcentral
+```
+
+### Environment Variables
+
+Add these to your `.env` file (see `.env.example`):
+
+| Variable | Default | Description |
+|---|---|---|
+| `MODSECURITY_PARANOIA` | `1` | CRS paranoia level (1–4). Start at 1 to avoid false positives with MeshCentral agent traffic. |
+| `MODSECURITY_ANOMALY_INBOUND` | `10` | Inbound anomaly score threshold. Lower = stricter. |
+| `MODSECURITY_ANOMALY_OUTBOUND` | `5` | Outbound anomaly score threshold. Lower = stricter. |
+
+> **Note**: MeshCentral agent connections use WebSockets and binary protocols. Paranoia levels above 1 may generate false positives. Test thoroughly before raising the level.
+
+### Verifying ModSecurity Operation
+
+```bash
+# Check container status
+docker compose ps modsecurity-waf modsecurity-dummy
+
+# View ModSecurity audit logs (blocked requests)
+docker compose logs modsecurity-waf
+
+# Test that benign requests pass through
+curl -I https://your-domain.com
+
+# Test that a simple SQLi attempt is blocked (should return 403)
+curl -I "https://your-domain.com/?id=1'%20OR%20'1'='1"
+```
+
+### Disabling ModSecurity
+
+Stop the ModSecurity services and remove the middleware reference from router labels:
+
+```bash
+# Stop ModSecurity containers
+docker compose stop modsecurity-waf modsecurity-dummy
+
+# Remove 'modsecurity@file' from traefik router labels in docker-compose.yml,
+# then restart Traefik to apply
+docker compose restart traefik
 ```
 
 ## 📈 Prometheus + Grafana Monitoring
