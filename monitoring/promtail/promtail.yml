@@ -33,15 +33,15 @@ scrape_configs:
           status:
 
   # ModSecurity WAF audit log — collected from the container's stdout via the Docker
-  # socket.  ModSecurity writes one JSON object per audit event to stdout
-  # (MODSEC_AUDIT_LOG_FORMAT=JSON); Promtail streams it through the Docker API so no
-  # named volume or entrypoint chown is required.
+  # socket proxy.  ModSecurity writes one JSON object per audit event to stdout
+  # (MODSEC_AUDIT_LOG_FORMAT=JSON); Promtail streams it through the proxy TCP endpoint
+  # so no named volume, entrypoint override, or root privileges are required.
   # The http_code label enables efficient stream selection so dashboard queries can
   # filter for blocked (403) vs. inspected-but-passed requests without scanning every
   # log line.
   - job_name: modsec-audit
     docker_sd_configs:
-      - host: unix:///var/run/docker.sock
+      - host: tcp://docker-socket-proxy:2375
         refresh_interval: 5s
         filters:
           - name: name
