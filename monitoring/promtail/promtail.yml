@@ -34,9 +34,10 @@ scrape_configs:
 
   # ModSecurity WAF audit log (populated when the modsecurity profile is active).
   # Each line is a JSON object describing a request that triggered at least one CRS
-  # rule or was blocked.  The http_code label enables efficient stream selection so
-  # dashboard queries can filter for blocked (403) vs. inspected-but-passed requests
-  # without scanning every log line.
+  # rule or was blocked.  Read from a named volume — the same pattern as traefik-access.
+  # The http_code label enables efficient stream selection so dashboard queries can
+  # filter for blocked (403) vs. inspected-but-passed requests without scanning every
+  # log line.
   - job_name: modsec-audit
     static_configs:
       - targets:
