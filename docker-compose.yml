@@ -208,9 +208,15 @@ services:
       # Inbound/outbound anomaly score thresholds (lower = stricter).
       ANOMALY_INBOUND: "${MODSECURITY_ANOMALY_INBOUND:-10}"
       ANOMALY_OUTBOUND: "${MODSECURITY_ANOMALY_OUTBOUND:-5}"
-      # Write ModSecurity audit log as JSON to stdout. Promtail collects it via
-      # the Docker socket (docker_sd_configs) — no volume or entrypoint override needed.
+      # Write ModSecurity audit log as JSON to a named volume so Promtail can read it —
+      # the same pattern used for the Traefik access log.  The mount path
+      # /var/log/apache2 already exists as httpd:httpd in the upstream image, so Docker
+      # initialises the named volume with the correct ownership on first use; no root
+      # privileges or chown workaround is needed in any container.
+      MODSEC_AUDIT_LOG: /var/log/apache2/audit.log
       MODSEC_AUDIT_LOG_FORMAT: JSON
+    volumes:
+      - modsec-logs:/var/log/apache2
     networks:
       - meshcentral-frontend
     healthcheck:
@@ -285,30 +291,9 @@ services:
     profiles:
       - monitoring
 
-  # Docker Socket Proxy – least-privilege gateway to the Docker API.
-  # Promtail's docker_sd_configs needs Docker API access to stream ModSecurity audit
-  # logs from container stdout.  Rather than running Promtail as root with a raw socket
-  # mount, this proxy exposes only the two endpoints Promtail requires (container
-  # discovery + log streaming) over a TCP port on the internal monitoring network.
-  # Everything else is denied by default.
-  docker-socket-proxy:
-    image: ghcr.io/tecnativa/docker-socket-proxy:0.4.2
-    container_name: meshcentral-docker-socket-proxy
-    restart: unless-stopped
-    environment:
-      CONTAINERS: 1   # Required for docker_sd_configs container discovery
-      LOGS: 1         # Required for docker_sd_configs log streaming
-      # All other API groups (IMAGES, NETWORKS, VOLUMES, …) remain 0 (denied)
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks:
-      - meshcentral-monitoring
-    profiles:
-      - monitoring
-
-  # Promtail – log collector; tails the Traefik JSON access log and ships to Loki.
-  # Reads Traefik logs via a shared volume, and ModSecurity audit logs via the Docker
-  # socket proxy (docker_sd_configs) — no root privileges or raw socket mount needed.
+  # Promtail – log collector; tails the Traefik JSON access log and ModSecurity audit
+  # log, and ships entries to Loki.  Both log sources are read from named volumes —
+  # the same pattern, no Docker socket or elevated privileges needed.
   promtail:
     image: grafana/promtail:latest
     container_name: meshcentral-promtail
@@ -318,13 +303,13 @@ services:
       - ./monitoring/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
       # Mount the same Traefik access log volume that CrowdSec also reads
       - traefik-logs:/var/log/traefik:ro
+      # ModSecurity audit log (populated when the modsecurity profile is active)
+      - modsec-logs:/var/log/modsec:ro
     networks:
       - meshcentral-monitoring
     depends_on:
       loki:
         condition: service_healthy
-      docker-socket-proxy:
-        condition: service_started
     profiles:
       - monitoring
 
@@ -435,4 +420,6 @@ volumes:
   loki-data:
     driver: local
   grafana-data:
+    driver: local
+  modsec-logs:
     driver: local
