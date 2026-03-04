@@ -198,15 +198,6 @@ services:
     image: owasp/modsecurity-crs:apache
     container_name: meshcentral-modsecurity-waf
     restart: unless-stopped
-    # Run as root so the entrypoint can chown /var/log/modsec to www-data.
-    # Docker named volumes are created with root:root ownership, which
-    # prevents the Apache process (www-data) from writing the ModSecurity
-    # audit log and causes the container to exit with a configuration syntax
-    # error. The owasp/modsecurity-crs:apache image defaults to a non-root
-    # user; overriding to root here allows chown to succeed, after which
-    # Apache internally drops privileges to www-data via its User directive.
-    user: root
-    entrypoint: ["/bin/sh", "-c", "mkdir -p /var/log/modsec && chown www-data:www-data /var/log/modsec && chmod 755 /var/log/modsec && exec /docker-entrypoint.sh \"$@\"", "--"]
     environment:
       # BACKEND must point to modsecurity-dummy so requests that pass CRS rules
       # receive a 200 OK response (required by the Traefik plugin).
@@ -217,13 +208,9 @@ services:
       # Inbound/outbound anomaly score thresholds (lower = stricter).
       ANOMALY_INBOUND: "${MODSECURITY_ANOMALY_INBOUND:-10}"
       ANOMALY_OUTBOUND: "${MODSECURITY_ANOMALY_OUTBOUND:-5}"
-      # Write ModSecurity audit log to a named volume so Promtail can ship it to Loki.
-      # Set format to JSON for structured log parsing in the Grafana dashboard.
-      MODSEC_AUDIT_LOG: /var/log/modsec/audit.log
+      # Write ModSecurity audit log as JSON to stdout. Promtail collects it via
+      # the Docker socket (docker_sd_configs) — no volume or entrypoint override needed.
       MODSEC_AUDIT_LOG_FORMAT: JSON
-      MODSEC_AUDIT_LOG_TYPE: Serial
-    volumes:
-      - modsec-logs:/var/log/modsec
     networks:
       - meshcentral-frontend
     healthcheck:
@@ -299,19 +286,21 @@ services:
       - monitoring
 
   # Promtail – log collector; tails the Traefik JSON access log and ships to Loki.
-  # Isolated to meshcentral-monitoring; reads logs via a shared volume (no network path needed
-  # to Traefik) and pushes to Loki on the same monitoring network.
+  # Reads Traefik logs via a shared volume, and ModSecurity audit logs via the Docker
+  # socket (docker_sd_configs) — no modsec volume or entrypoint override needed.
+  # Runs as root so it can read the Docker socket (/var/run/docker.sock).
   promtail:
     image: grafana/promtail:latest
     container_name: meshcentral-promtail
     restart: unless-stopped
+    user: root
     command: -config.file=/etc/promtail/promtail.yml
     volumes:
       - ./monitoring/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
       # Mount the same Traefik access log volume that CrowdSec also reads
       - traefik-logs:/var/log/traefik:ro
-      # Mount the ModSecurity audit log volume (populated when the modsecurity profile is active)
-      - modsec-logs:/var/log/modsec:ro
+      # Docker socket for collecting ModSecurity audit logs from container stdout
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - meshcentral-monitoring
     depends_on:
@@ -427,6 +416,4 @@ volumes:
   loki-data:
     driver: local
   grafana-data:
-    driver: local
-  modsec-logs:
     driver: local
