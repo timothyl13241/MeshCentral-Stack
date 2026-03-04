@@ -198,10 +198,14 @@ services:
     image: owasp/modsecurity-crs:apache
     container_name: meshcentral-modsecurity-waf
     restart: unless-stopped
-    # Ensure /var/log/modsec is writable by Apache (www-data) before the server
-    # starts. Docker named volumes are created with root:root ownership, which
-    # prevents the Apache process from writing the ModSecurity audit log and
-    # causes the container to exit with a configuration syntax error.
+    # Run as root so the entrypoint can chown /var/log/modsec to www-data.
+    # Docker named volumes are created with root:root ownership, which
+    # prevents the Apache process (www-data) from writing the ModSecurity
+    # audit log and causes the container to exit with a configuration syntax
+    # error. The owasp/modsecurity-crs:apache image defaults to a non-root
+    # user; overriding to root here allows chown to succeed, after which
+    # Apache internally drops privileges to www-data via its User directive.
+    user: root
     entrypoint: ["/bin/sh", "-c", "mkdir -p /var/log/modsec && chown www-data:www-data /var/log/modsec && chmod 755 /var/log/modsec && exec /docker-entrypoint.sh \"$@\"", "--"]
     environment:
       # BACKEND must point to modsecurity-dummy so requests that pass CRS rules
