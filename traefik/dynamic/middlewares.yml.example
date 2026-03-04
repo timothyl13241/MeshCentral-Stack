@@ -75,5 +75,6 @@ http:
       tls: {}
       middlewares:
         - crowdsec@file
+        # - modsecurity@file # Uncomment when enabling ModSec
         # - dashboard-auth@file  # Uncomment to enable BasicAuth (configure above first)
 
